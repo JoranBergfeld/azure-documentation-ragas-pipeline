@@ -1,0 +1,9 @@
+name: ragas-infused-pipeline
+metadata:
+  template: ragas-infused-pipeline@0.1.0
+hooks:
+  postprovision:
+    shell: sh
+    run: |
+      python -m ragpipe.ingest
+      python scripts/setup_agents.py
