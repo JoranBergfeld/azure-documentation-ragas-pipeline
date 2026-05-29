@@ -5,6 +5,8 @@
     "location": { "value": "switzerlandnorth" },
     "baseName": { "value": "ragpipe" },
     "chatModel": { "value": "gpt-4o" },
-    "embeddingModel": { "value": "text-embedding-3-small" }
+    "embeddingModel": { "value": "text-embedding-3-small" },
+    "principalId": { "value": "${AZURE_PRINCIPAL_ID}" },
+    "principalType": { "value": "${AZURE_PRINCIPAL_TYPE=User}" }
   }
 }
