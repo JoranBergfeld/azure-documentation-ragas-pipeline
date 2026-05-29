@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from enum import Enum
 from typing import Awaitable, Callable, Protocol
 
 from ragpipe.models import Chunk
@@ -81,9 +82,6 @@ def build_ragas_faithfulness(settings) -> MetricFn:  # pragma: no cover
         return float(await metric.single_turn_ascore(sample))
 
     return metric_fn
-
-
-from enum import Enum
 
 
 class LoopDecision(str, Enum):

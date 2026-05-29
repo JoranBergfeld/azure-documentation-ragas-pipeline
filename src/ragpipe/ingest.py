@@ -60,15 +60,13 @@ def fetch_pages(urls: list[str]) -> list[dict[str, Any]]:
 
 
 def main() -> None:  # pragma: no cover - integration entry point
-    import asyncio
-
     import yaml
     from azure.identity import DefaultAzureCredential
     from azure.search.documents import SearchClient
     from azure.search.documents.indexes import SearchIndexClient
-    from agent_framework.foundry import FoundryEmbeddingClient
 
     from ragpipe.config import Settings
+    from ragpipe.embeddings import build_embed_fn
     from ragpipe.search_index import create_index
 
     settings = Settings.from_env()
@@ -76,13 +74,7 @@ def main() -> None:  # pragma: no cover - integration entry point
         urls = yaml.safe_load(f)["sources"]
 
     cred = DefaultAzureCredential()
-    embed_client = FoundryEmbeddingClient()
-
-    def embed(text: str) -> list[float]:
-        result = asyncio.get_event_loop().run_until_complete(
-            embed_client.get_embeddings([text])
-        )
-        return list(result[0].embedding)
+    embed = build_embed_fn(settings)
 
     pages = fetch_pages(urls)
     first_vec = embed(pages[0]["text"][:100])

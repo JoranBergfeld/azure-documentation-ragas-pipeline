@@ -31,13 +31,11 @@ def make_deps(
 def build_pipeline_fn(
     settings: Settings,
 ) -> Callable[[str], Awaitable[PipelineState]]:  # pragma: no cover - live wiring
-    import asyncio
-    from concurrent.futures import ThreadPoolExecutor
-
     from azure.identity import DefaultAzureCredential
     from azure.search.documents import SearchClient
-    from agent_framework.foundry import FoundryAgent, FoundryEmbeddingClient
+    from agent_framework.foundry import FoundryAgent
 
+    from ragpipe.embeddings import build_embed_fn
     from ragpipe.generate import Generator
     from ragpipe.guardrail import FaithfulnessScorer, build_ragas_faithfulness
     from ragpipe.retrieval.bm25 import BM25Retriever
@@ -47,20 +45,10 @@ def build_pipeline_fn(
 
     cred = DefaultAzureCredential()
     search = SearchClient(settings.search_endpoint, settings.search_index, cred)
-    embed_client = FoundryEmbeddingClient()
-
-    # The retrievers are synchronous but the embedding client is async, and they
-    # are called from inside the running run_pipeline event loop. Bridge the async
-    # embedding call onto its own loop in a worker thread to avoid
-    # "event loop is already running".
-    _embed_pool = ThreadPoolExecutor(max_workers=1)
-
-    def embed(text: str) -> list[float]:
-        def _run() -> list[float]:
-            result = asyncio.run(embed_client.get_embeddings([text]))
-            return list(result[0].embedding)
-
-        return _embed_pool.submit(_run).result()
+    # Synchronous embed callable over the Azure OpenAI endpoint (Entra auth). The
+    # underlying openai client is sync, so it is safe to call from inside the
+    # running run_pipeline event loop (no nested-loop bridging needed).
+    embed = build_embed_fn(settings)
 
     agent = FoundryAgent(
         project_endpoint=settings.foundry_project_endpoint,

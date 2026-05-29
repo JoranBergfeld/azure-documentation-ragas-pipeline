@@ -1,39 +1,45 @@
-"""Register the Foundry generator agent with the Code Interpreter tool.
+#!/usr/bin/env python3
+"""Register the Foundry generator agent (with the Code Interpreter tool).
 
-Run once after `azd up` (or via the azd postprovision hook):
+Run after `azd up` (or via the azd postprovision hook):
     python scripts/setup_agents.py
-Writes GENERATOR_AGENT_NAME / GENERATOR_AGENT_VERSION to stdout for .env.
+
+Uses the Foundry projects (new) API: an agent is a named, versioned asset created
+with ``project.agents.create_version(agent_name=..., definition=PromptAgentDefinition(...))``.
 """
 from __future__ import annotations
 
 from azure.ai.projects import AIProjectClient
+from azure.ai.projects.models import CodeInterpreterTool, PromptAgentDefinition
 from azure.identity import DefaultAzureCredential
 
 from ragpipe.config import Settings
 
-INSTRUCTIONS = (
-    "You are a Microsoft/Azure documentation assistant. Answer using only the "
-    "provided numbered sources and cite them inline like [1]. When a question "
-    "requires counting, comparison tables, or arithmetic over the sourced facts, "
-    "use the code interpreter tool. Never invent facts not present in the sources."
+GENERATOR_INSTRUCTIONS = (
+    "You are a Microsoft/Azure documentation assistant. Answer the user's question "
+    "using only the provided context passages. Cite sources by their [n] index. "
+    "If the context is insufficient, say so. When the question involves counting, "
+    "comparing, or aggregating across passages, use the code interpreter tool to "
+    "compute the answer precisely."
 )
 
 
-def main() -> None:  # pragma: no cover
+def main() -> None:
     settings = Settings.from_env()
     client = AIProjectClient(
         endpoint=settings.foundry_project_endpoint,
         credential=DefaultAzureCredential(),
     )
-    agent = client.agents.create_agent(
-        model=settings.foundry_chat_model,
-        name=settings.generator_agent_name,
-        instructions=INSTRUCTIONS,
-        tools=[{"type": "code_interpreter"}],
+    agent = client.agents.create_version(
+        agent_name=settings.generator_agent_name,
+        definition=PromptAgentDefinition(
+            model=settings.foundry_chat_model,
+            instructions=GENERATOR_INSTRUCTIONS,
+            tools=[CodeInterpreterTool()],
+        ),
     )
-    print(f"GENERATOR_AGENT_NAME={agent.name}")
-    print(f"GENERATOR_AGENT_VERSION={getattr(agent, 'version', '1.0')}")
+    print(f"Created agent '{agent.name}' version {agent.version}")
 
 
-if __name__ == "__main__":  # pragma: no cover
+if __name__ == "__main__":
     main()
