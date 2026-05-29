@@ -1,0 +1,3 @@
+{"question": "What algorithm does Azure AI Search use to merge full-text and vector results in hybrid search?", "ground_truth": "Reciprocal Rank Fusion (RRF).", "ground_truth_context": "https://learn.microsoft.com/azure/search/hybrid-search-overview"}
+{"question": "What score does the Azure AI Search semantic ranker produce and what is its range?", "ground_truth": "It produces @search.rerankerScore, ranging from 0.00 to 4.00.", "ground_truth_context": "https://learn.microsoft.com/azure/search/hybrid-search-ranking"}
+{"question": "In Microsoft Agent Framework, what decorator marks an executor's message handler in Python?", "ground_truth": "The @handler decorator.", "ground_truth_context": "https://learn.microsoft.com/agent-framework/workflows/executors"}
