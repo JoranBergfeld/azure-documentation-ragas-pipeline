@@ -1,5 +1,15 @@
-@description('Primary location for all resources')
-param location string = resourceGroup().location
+@description('Primary location for all resources. Restricted to regions where gpt-4o (2024-11-20), text-embedding-3-large, and Azure AI Search (with semantic ranker) are all available on the Standard deployment type.')
+@allowed([
+  'swedencentral'
+  'francecentral'
+  'norwayeast'
+  'switzerlandnorth'
+  'uksouth'
+  'eastus'
+  'eastus2'
+  'westus3'
+])
+param location string = 'swedencentral'
 
 @description('Base name for resources')
 param baseName string = 'ragpipe'
@@ -7,8 +17,8 @@ param baseName string = 'ragpipe'
 @description('Chat model deployment name')
 param chatModel string = 'gpt-4o'
 
-@description('Embedding model deployment name')
-param embeddingModel string = 'text-embedding-3-small'
+@description('Embedding model deployment name. text-embedding-3-large is available in all allowed regions (including swedencentral); text-embedding-3-small is NOT available in swedencentral.')
+param embeddingModel string = 'text-embedding-3-large'
 
 resource search 'Microsoft.Search/searchServices@2024-06-01-preview' = {
   name: '${baseName}-search'
