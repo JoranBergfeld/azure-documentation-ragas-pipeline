@@ -1,0 +1,18 @@
+flowchart TD
+  start["start (Start)"];
+  dense["dense"];
+  bm25["bm25"];
+  rrf["rrf"];
+  rerank["rerank"];
+  generate["generate"];
+  faithfulness["faithfulness"];
+  answer["answer"];
+  start --> dense;
+  start --> bm25;
+  dense --> rrf;
+  bm25 --> rrf;
+  rrf --> rerank;
+  rerank --> generate;
+  generate --> faithfulness;
+  faithfulness -. conditional .-> rrf;
+  faithfulness --> answer;

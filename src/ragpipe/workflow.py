@@ -71,3 +71,56 @@ async def run_pipeline(query: str, deps: PipelineDeps) -> PipelineState:
             state.low_confidence = True
             return state
         state.next_attempt()  # RETRY
+
+
+def build_viz_workflow():
+    """Build an Agent Framework Workflow purely for WorkflowViz diagram export.
+
+    Executors are no-op passthroughs; their only purpose is to make the graph
+    topology (incl. the conditional loop edge faithfulness->rrf) renderable.
+    Runtime behavior lives in run_pipeline().
+    """
+    from agent_framework import Executor, WorkflowBuilder, WorkflowContext, handler
+
+    # NOTE: this module uses `from __future__ import annotations`, which turns
+    # every annotation into a string at runtime. The Agent Framework `@handler`
+    # decorator inspects the live `ctx` annotation and rejects the string
+    # "WorkflowContext[str]". We therefore define the no-op handler with real
+    # (non-stringified) annotation objects so the decorator's validation passes.
+    async def _go(self, msg: str, ctx) -> None:
+        await ctx.send_message(msg)
+
+    _go.__annotations__ = {
+        "msg": str,
+        "ctx": WorkflowContext[str],
+        "return": None,
+    }
+
+    class _Stage(Executor):
+        go = handler(_go)
+
+    # A dispatch start node so BOTH dense and bm25 are reachable from the start
+    # (WorkflowBuilder requires every executor be reachable from the start node).
+    start = _Stage(id="start")
+    dense = _Stage(id="dense")
+    bm25 = _Stage(id="bm25")
+    rrf = _Stage(id="rrf")
+    rerank = _Stage(id="rerank")
+    generate = _Stage(id="generate")
+    faithfulness = _Stage(id="faithfulness")
+    answer = _Stage(id="answer")
+
+    def low_faithfulness(_msg: str) -> bool:
+        return True  # label-only; real decision is in run_pipeline()
+
+    builder = WorkflowBuilder(start_executor=start)
+    builder.add_edge(start, dense)
+    builder.add_edge(start, bm25)
+    builder.add_edge(dense, rrf)
+    builder.add_edge(bm25, rrf)
+    builder.add_edge(rrf, rerank)
+    builder.add_edge(rerank, generate)
+    builder.add_edge(generate, faithfulness)
+    builder.add_edge(faithfulness, rrf, condition=low_faithfulness)
+    builder.add_edge(faithfulness, answer)
+    return builder.build()
