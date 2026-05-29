@@ -12,15 +12,13 @@ Microsoft technology stack, and uses **RAGAS** both *online* (an inline faithful
 and *offline* (an evaluation harness). The system answers questions about Microsoft/Azure
 documentation and lets a user **see** the pipeline run and **measure** its quality.
 
-The project ships **two answering strategies** and uses RAGAS to compare them:
-
-- **Strategy A — Decomposed RAG pipeline:** the literal diagram, built as a Microsoft Agent
-  Framework *Workflow* where every box is its own executor. We control dense retrieval, BM25,
-  RRF fusion, semantic reranking, generation, and the faithfulness loop.
-- **Strategy B — Foundry agentic baseline:** a single agent registered in Azure AI Foundry that
-  uses the Foundry **Azure AI Search tool** to retrieve and answer in one managed call.
-
-RAGAS scores both strategies on the same test set; the dashboard shows the comparison.
+The system is a **single decomposed RAG pipeline** — the literal diagram, built as a Microsoft
+Agent Framework *Workflow* where every box is its own executor: we control dense retrieval, BM25,
+RRF fusion, semantic reranking, generation, and the faithfulness loop. The generation step is a
+**Foundry-registered Prompt Agent that carries a Foundry-defined tool (Code Interpreter)**,
+satisfying the requirement that agents registered in Foundry leverage Foundry tools. RAGAS scores
+the pipeline on a test set (per-stage where decomposition allows) and the dashboard renders both
+the live run and the evaluation results.
 
 ## 2. Goals / Non-goals
 
@@ -31,7 +29,7 @@ RAGAS scores both strategies on the same test set; the dashboard shows the compa
 - Use Azure AI Foundry for models *and* for at least one **agent registered in Foundry that
   leverages a Foundry-defined tool** (the user requirement).
 - Use Azure AI Search for hybrid retrieval and the semantic (L2) reranker.
-- Use RAGAS online (guardrail) and offline (A-vs-B comparison report).
+- Use RAGAS online (guardrail) and offline (evaluation report, per-stage where possible).
 - Provide a Streamlit dashboard to watch a query flow through the pipeline and view eval results.
 - Reproducible infrastructure via `azd` + Bicep.
 
@@ -42,6 +40,10 @@ RAGAS scores both strategies on the same test set; the dashboard shows the compa
 - A non-Azure / fully-local fallback (the project is committed to the Foundry stack).
 - A bespoke test-set authoring UI — the two sources (hand-authored / synthetic) are selected by
   config, not built/edited in the dashboard.
+- A second "managed agent" baseline pipeline. (An earlier draft proposed a Strategy B where a
+  single Foundry agent + the Foundry Azure AI Search tool did everything; it was dropped as
+  redundant — it shared A's index and also just registered a Foundry agent. The Foundry-tool
+  requirement is instead met by attaching Code Interpreter to A's generator. See §4.2.)
 
 ## 3. Domain & corpus
 
@@ -89,7 +91,7 @@ User query (start executor)
 | `BM25Retriever` | query | ranked `[Chunk]` + BM25 scores | `azure-search-documents` full-text query |
 | `RRFFusion` | two `[Chunk]` lists | fused `[Chunk]` with RRF scores | our own code (`score = Σ 1/(k+rank)`) |
 | `SemanticReranker` | query + fused top-N | reranked `[Chunk]` with `rerankerScore` | Azure AI Search semantic query **filtered to the fused doc IDs** (see 4.3) |
-| `Generator` | query + top reranked chunks | answer text + citations | **Foundry Prompt Agent** (registered), consumed via `FoundryAgent`; chunks passed as message context |
+| `Generator` | query + top reranked chunks | answer text + citations | **Foundry Prompt Agent** (registered) carrying the **Code Interpreter** Foundry tool, consumed via `FoundryAgent`; chunks passed as message context (see §4.2) |
 | `FaithfulnessGuard` | answer + context | faithfulness score + pass/fail | RAGAS `faithfulness`, judged by the Foundry chat model |
 
 **The loop:** if faithfulness < threshold and retries remain, a conditional edge routes back to
@@ -99,23 +101,26 @@ After max retries, the best-scoring attempt is returned, flagged as "low confide
 A `PipelineState` object (query, per-stage results, scores, attempt count, trace events) threads
 through the workflow and is what the dashboard renders.
 
-### 4.2 Strategy B — Foundry agentic baseline
+### 4.2 The generator agent and its Foundry tool
 
-A single **Prompt Agent registered in Azure AI Foundry** whose definition includes the **Azure AI
-Search tool** (`query_type = vector_semantic_hybrid`, configured top_k). The app sends the user
-query; Foundry plans, retrieves (hybrid + semantic), and returns a cited answer in one managed
-call. Consumed via `FoundryAgent`. This is intentionally a black box — its purpose is to be a
-realistic, minimal-code baseline and to exercise "agents registered in Foundry + Foundry tools".
+The `Generator` executor is backed by a **Prompt Agent registered in Azure AI Foundry** (created
+via `azure-ai-projects`, consumed via `FoundryAgent`). Its definition attaches the hosted
+**Code Interpreter** Foundry tool. This is what satisfies the requirement that a Foundry-registered
+agent leverage a Foundry-defined tool.
 
-**Why A and B are different (clarification).** A and B share the *same* Azure AI Search index, and
-*both* use a Foundry-registered agent — so those are not what distinguishes them. The single axis
-of difference is **who orchestrates retrieval**: in A our code runs dense / BM25 / RRF / semantic
-rerank as separate, observable, individually-RAGAS-scorable stages with a faithfulness loop; in B
-the Foundry **AI Search tool** does retrieval + rerank + generation internally as one opaque call.
-B is therefore (1) the only place a Foundry *tool* is exercised, and (2) the baseline the offline
-RAGAS harness compares A against — answering "is the hand-built decomposed pipeline actually better
-than the out-of-the-box managed agent, and where?". If that comparison ever stops being valuable,
-B can be dropped without touching A.
+- **Why Code Interpreter (and not the AI Search tool):** the pipeline already does its own
+  retrieval — handing the same job to a Foundry search tool would duplicate the diagram's stages
+  and hide them. Code Interpreter instead adds a capability the pipeline *doesn't* have: when an
+  Azure-docs question needs a small computation over the retrieved facts (counts, a comparison
+  table, pricing/limit arithmetic), the model can run code on demand. The answer still grounds in
+  the retrieved chunks, so **RAGAS faithfulness stays meaningful** — the tool transforms/organises
+  grounded facts rather than introducing ungrounded ones.
+- **How it appears:** tool invocations surface in the agent run steps and are captured into the
+  `PipelineState` trace, so the dashboard shows "Code Interpreter ran" alongside the generated
+  answer.
+- **Behavioural note:** because the tool lives on the *Foundry agent definition*, it is configured
+  at agent-registration time (setup script / azd post-provision), not passed in client code. The
+  model decides per-query whether to call it; many doc questions won't need it, and that's fine.
 
 ### 4.3 The semantic reranker mechanism (risk note)
 
@@ -142,9 +147,9 @@ Azure-native approach first; the fallback is documented, not built.)*
 - **Online (guardrail):** `faithfulness` only, on the single generated answer + its context. Fast
   enough to gate each attempt.
 - **Offline (harness):** the full set — `faithfulness`, `answer_relevancy`, `context_precision`,
-  `context_recall` — run over the test set for **both** strategies. Because Strategy A is
-  decomposed, we can additionally attribute context metrics to retrieval stages (e.g. context
-  precision after RRF vs after rerank).
+  `context_recall` — run over the test set. Because the pipeline is decomposed, we additionally
+  attribute the context metrics to retrieval stages (e.g. context precision after RRF vs after
+  rerank), which is the main analytical payoff of building it stage-by-stage.
 - **Cross-check:** optionally also run Foundry's own `azure-ai-evaluation` RAG evaluators
   (Groundedness, Relevance, Retrieval) for a second opinion. Behind a flag.
 
@@ -170,8 +175,8 @@ Azure-native approach first; the fallback is documented, not built.)*
   - *Run* tab: enter a query → stages light up in sequence showing each stage's chunks and scores
     (dense hits, BM25 hits, fused order, reranked order with `rerankerScore`), the generated
     answer, the faithfulness score, and whether the loop fired (with attempt count).
-  - *Evaluation* tab: run/load the RAGAS harness and show per-metric scores and the **A-vs-B**
-    comparison (table + bar chart), plus per-stage context metrics for A.
+  - *Evaluation* tab: run/load the RAGAS harness and show per-metric scores (table + bar chart),
+    plus the per-stage context metrics (after RRF vs after rerank).
   - *Architecture* tab: the WorkflowViz diagram + a short legend.
 - The dashboard reads `PipelineState` (live) and the harness's saved results JSON (eval).
 
@@ -180,8 +185,8 @@ Azure-native approach first; the fallback is documented, not built.)*
 - `azd up` provisions: a Foundry project/resource, a chat model deployment and an embedding model
   deployment, an Azure AI Search service (tier with semantic ranker enabled), and the Search index.
 - A post-provision step (script invoked by azd hooks) runs ingestion (build the index) and
-  **registers the two Foundry Prompt Agents** (Strategy A generator; Strategy B searcher-with-tool)
-  via `azure-ai-projects`, writing their names/versions into the app config.
+  **registers the Foundry Prompt Agent** (the generator, with the Code Interpreter tool attached)
+  via `azure-ai-projects`, writing its name/version into the app config.
 - `azd down` tears everything down. Endpoints/deployment names are surfaced as outputs and written
   to `.env` for local runs (`AzureCliCredential` / `DefaultAzureCredential` for auth — no keys in
   code where avoidable).
@@ -191,7 +196,7 @@ Azure-native approach first; the fallback is documented, not built.)*
 A single typed settings module loads from environment / `.env`:
 `FOUNDRY_PROJECT_ENDPOINT`, `FOUNDRY_CHAT_MODEL`, `FOUNDRY_EMBEDDING_MODEL` (+ models endpoint),
 `SEARCH_ENDPOINT`, `SEARCH_INDEX`, `GENERATOR_AGENT_NAME`/`_VERSION`,
-`BASELINE_AGENT_NAME`/`_VERSION`, `FAITHFULNESS_THRESHOLD`, `MAX_RETRIES`, `TOP_K`, `RRF_K`,
+`FAITHFULNESS_THRESHOLD`, `MAX_RETRIES`, `TOP_K`, `RRF_K`,
 `TESTSET_MODE` (`handauthored` | `synthetic`).
 `load_dotenv()` is called explicitly (Agent Framework does not auto-load `.env`).
 
@@ -231,17 +236,16 @@ ragas-infused-pipeline/
     ingest.py                # fetch → chunk → embed → index
     retrieval/
       dense.py  bm25.py  rrf.py  rerank.py
-    generate.py              # FoundryAgent generator (Strategy A)
-    baseline.py              # FoundryAgent + AI Search tool (Strategy B)
+    generate.py              # FoundryAgent generator (carries Code Interpreter tool)
     guardrail.py             # RAGAS faithfulness + loop policy
-    workflow.py              # WorkflowBuilder wiring of Strategy A + WorkflowViz export
+    workflow.py              # WorkflowBuilder wiring of the pipeline + WorkflowViz export
     state.py                 # PipelineState + trace events
     eval/
-      harness.py             # RAGAS suite over testset, A vs B
+      harness.py             # RAGAS suite over testset (overall + per-stage context metrics)
       testset.py             # load_testset(): TESTSET_MODE switch (handauthored | synthetic)
   app/dashboard.py           # Streamlit
   scripts/
-    setup_agents.py          # register the two Foundry agents
+    setup_agents.py          # register the Foundry generator agent (+ Code Interpreter tool)
   tests/
   README.md
 ```
@@ -250,11 +254,11 @@ ragas-infused-pipeline/
 
 1. Infra (azd+Bicep) + ingestion → a populated Azure AI Search index.
 2. Strategy A retrieval executors (dense, BM25, RRF, rerank) + trace, verified standalone.
-3. Generator agent (registered in Foundry) + workflow wiring + WorkflowViz export.
+3. Generator agent (registered in Foundry, with Code Interpreter tool) + workflow wiring +
+   WorkflowViz export.
 4. RAGAS faithfulness guardrail + loop.
-5. Strategy B baseline agent (Foundry AI Search tool).
-6. RAGAS offline harness + A-vs-B report.
-7. Streamlit dashboard.
+5. RAGAS offline harness (overall + per-stage context metrics) + report.
+6. Streamlit dashboard.
 
 ## 14. Open questions / risks
 
