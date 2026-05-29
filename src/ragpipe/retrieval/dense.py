@@ -1,21 +1,18 @@
 from __future__ import annotations
 
-from typing import Any, Callable, Protocol
+from typing import Callable
 
 from azure.search.documents.models import VectorizedQuery
 
 from ragpipe.models import Chunk
+from ragpipe.retrieval._types import Searchable
 from ragpipe.retrieval.bm25 import _to_chunk
-
-
-class _Searchable(Protocol):
-    def search(self, search_text: str | None = None, **kwargs: Any): ...
 
 
 class DenseRetriever:
     def __init__(
         self,
-        client: _Searchable,
+        client: Searchable,
         embed_fn: Callable[[str], list[float]],
         top_k: int = 5,
     ) -> None:

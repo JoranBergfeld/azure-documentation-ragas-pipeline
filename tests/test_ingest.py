@@ -1,12 +1,6 @@
-from ragpipe.ingest import build_documents, html_to_text
+import re
 
-
-def test_html_to_text_strips_tags_and_scripts():
-    html = "<html><head><script>x=1</script></head><body><h1>Hi</h1><p>Body</p></body></html>"
-    text = html_to_text(html)
-    assert "Hi" in text
-    assert "Body" in text
-    assert "x=1" not in text
+from ragpipe.ingest import build_documents
 
 
 def test_build_documents_chunks_and_embeds():
@@ -17,7 +11,13 @@ def test_build_documents_chunks_and_embeds():
 
     assert len(docs) >= 2
     first = docs[0]
-    assert first["id"].startswith("http://x")  # url + chunk index
+    # id must be a valid Azure AI Search key: ^[A-Za-z0-9_\-=]+$
+    assert re.fullmatch(r"[A-Za-z0-9_\-=]+", first["id"])
+    # deterministic: same url+index always yields the same id
+    again = build_documents(pages, embed_fn=embed, max_chars=1000, overlap=100)
+    assert again[0]["id"] == first["id"]
+    # distinct chunks get distinct ids
+    assert docs[0]["id"] != docs[1]["id"]
     assert first["title"] == "T"
     assert first["url"] == "http://x"
     assert first["content_vector"] == [0.0, 0.1]

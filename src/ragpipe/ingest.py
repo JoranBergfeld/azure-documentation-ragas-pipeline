@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import hashlib
 from typing import Any, Callable
 
@@ -17,7 +18,8 @@ def html_to_text(html: str) -> str:
 
 def _doc_id(url: str, index: int) -> str:
     digest = hashlib.sha1(url.encode()).hexdigest()[:8]
-    return f"{url}#{index}-{digest}"
+    slug = base64.urlsafe_b64encode(url.encode()).decode().rstrip("=")
+    return f"{slug}_{index}_{digest}"
 
 
 def build_documents(

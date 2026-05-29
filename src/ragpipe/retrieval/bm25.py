@@ -1,12 +1,9 @@
 from __future__ import annotations
 
-from typing import Any, Protocol
+from typing import Any
 
 from ragpipe.models import Chunk
-
-
-class _Searchable(Protocol):
-    def search(self, search_text: str | None = None, **kwargs: Any): ...
+from ragpipe.retrieval._types import Searchable
 
 
 def _to_chunk(doc: dict[str, Any]) -> Chunk:
@@ -20,7 +17,7 @@ def _to_chunk(doc: dict[str, Any]) -> Chunk:
 
 
 class BM25Retriever:
-    def __init__(self, client: _Searchable, top_k: int = 5) -> None:
+    def __init__(self, client: Searchable, top_k: int = 5) -> None:
         self._client = client
         self._top_k = top_k
 

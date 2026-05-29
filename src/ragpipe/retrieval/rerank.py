@@ -1,12 +1,9 @@
 from __future__ import annotations
 
-from typing import Any, Protocol
+from typing import Any
 
 from ragpipe.models import Chunk
-
-
-class _Searchable(Protocol):
-    def search(self, search_text: str | None = None, **kwargs: Any): ...
+from ragpipe.retrieval._types import Searchable
 
 
 def _to_reranked_chunk(doc: dict[str, Any]) -> Chunk:
@@ -27,7 +24,7 @@ def _quote_ids(ids: list[str]) -> str:
 
 class SemanticReranker:
     def __init__(
-        self, client: _Searchable, semantic_config: str, top_k: int = 5
+        self, client: Searchable, semantic_config: str, top_k: int = 5
     ) -> None:
         self._client = client
         self._semantic_config = semantic_config
