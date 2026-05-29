@@ -107,6 +107,16 @@ query; Foundry plans, retrieves (hybrid + semantic), and returns a cited answer 
 call. Consumed via `FoundryAgent`. This is intentionally a black box — its purpose is to be a
 realistic, minimal-code baseline and to exercise "agents registered in Foundry + Foundry tools".
 
+**Why A and B are different (clarification).** A and B share the *same* Azure AI Search index, and
+*both* use a Foundry-registered agent — so those are not what distinguishes them. The single axis
+of difference is **who orchestrates retrieval**: in A our code runs dense / BM25 / RRF / semantic
+rerank as separate, observable, individually-RAGAS-scorable stages with a faithfulness loop; in B
+the Foundry **AI Search tool** does retrieval + rerank + generation internally as one opaque call.
+B is therefore (1) the only place a Foundry *tool* is exercised, and (2) the baseline the offline
+RAGAS harness compares A against — answering "is the hand-built decomposed pipeline actually better
+than the out-of-the-box managed agent, and where?". If that comparison ever stops being valuable,
+B can be dropped without touching A.
+
 ### 4.3 The semantic reranker mechanism (risk note)
 
 Azure AI Search's semantic ranker (L2) reranks the results of a query it executes; it is not a
