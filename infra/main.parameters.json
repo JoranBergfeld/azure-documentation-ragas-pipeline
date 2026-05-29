@@ -2,9 +2,9 @@
   "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
   "contentVersion": "1.0.0.0",
   "parameters": {
-    "location": { "value": "swedencentral" },
+    "location": { "value": "eastus2" },
     "baseName": { "value": "ragpipe" },
     "chatModel": { "value": "gpt-4o" },
-    "embeddingModel": { "value": "text-embedding-3-large" }
+    "embeddingModel": { "value": "text-embedding-3-small" }
   }
 }
