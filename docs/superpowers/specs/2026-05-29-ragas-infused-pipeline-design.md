@@ -40,7 +40,8 @@ RAGAS scores both strategies on the same test set; the dashboard shows the compa
 - A custom-trained reranker or embedding model.
 - Multi-turn conversational memory (single-turn Q&A is enough to demonstrate the pipeline).
 - A non-Azure / fully-local fallback (the project is committed to the Foundry stack).
-- RAGAS synthetic test-set generation in the first cut (a code hook is left for it).
+- A bespoke test-set authoring UI — the two sources (hand-authored / synthetic) are selected by
+  config, not built/edited in the dashboard.
 
 ## 3. Domain & corpus
 
@@ -141,11 +142,15 @@ Azure-native approach first; the fallback is documented, not built.)*
 
 - **Format:** JSONL with `question`, `ground_truth` (reference answer), and `ground_truth_context`
   (the source chunk/URL the answer came from) in `data/testset.jsonl`.
-- **First cut:** ~15–25 hand-authored Q/A/ground-truth items over the corpus. (Confirm the exact
-  build approach in the open question below before implementation.)
-- **Hook for later:** a `testset` module with a `load_testset()` interface and a stubbed
-  `generate_synthetic(corpus)` function (RAGAS `TestsetGenerator`) that can be enabled without
-  reworking the harness. Not built in the first cut.
+- **Config switch:** a `TESTSET_MODE` setting selects the source behind a single
+  `load_testset()` interface, so the eval harness is agnostic to which is active:
+  - `handauthored` (default) — load the curated `data/testset.jsonl` (~15–25 items written by us).
+  - `synthetic` — generate the set from the indexed corpus with RAGAS `TestsetGenerator` (using
+    the Foundry chat + embedding deployments), cache it to `data/testset.synthetic.jsonl`, and
+    load that. Questions are LLM-written but grounded in the *real* indexed documents — facts
+    come from the corpus, not invented. A `--regenerate` flag forces a fresh build.
+- Both code paths are implemented and exercised; the switch just chooses which `load_testset()`
+  returns. The synthetic path is spot-checkable (cached JSONL is human-readable) before a run.
 
 ## 7. Visualization
 
@@ -176,7 +181,8 @@ Azure-native approach first; the fallback is documented, not built.)*
 A single typed settings module loads from environment / `.env`:
 `FOUNDRY_PROJECT_ENDPOINT`, `FOUNDRY_CHAT_MODEL`, `FOUNDRY_EMBEDDING_MODEL` (+ models endpoint),
 `SEARCH_ENDPOINT`, `SEARCH_INDEX`, `GENERATOR_AGENT_NAME`/`_VERSION`,
-`BASELINE_AGENT_NAME`/`_VERSION`, `FAITHFULNESS_THRESHOLD`, `MAX_RETRIES`, `TOP_K`, `RRF_K`.
+`BASELINE_AGENT_NAME`/`_VERSION`, `FAITHFULNESS_THRESHOLD`, `MAX_RETRIES`, `TOP_K`, `RRF_K`,
+`TESTSET_MODE` (`handauthored` | `synthetic`).
 `load_dotenv()` is called explicitly (Agent Framework does not auto-load `.env`).
 
 ## 10. Error handling
@@ -222,7 +228,7 @@ ragas-infused-pipeline/
     state.py                 # PipelineState + trace events
     eval/
       harness.py             # RAGAS suite over testset, A vs B
-      testset.py             # load + (stub) synthetic hook
+      testset.py             # load_testset(): TESTSET_MODE switch (handauthored | synthetic)
   app/dashboard.py           # Streamlit
   scripts/
     setup_agents.py          # register the two Foundry agents
@@ -242,9 +248,6 @@ ragas-infused-pipeline/
 
 ## 14. Open questions / risks
 
-- **Test-set build approach** is not yet finalized (the question was interrupted): hand-authored
-  only, hand-authored + RAGAS synthetic, or hand-authored now with a synthetic hook. Default
-  assumed here: hand-authored first cut with a synthetic hook left in code.
 - **Semantic-rerank-over-filtered-set** (4.3) is the main technical risk; mitigated by the
   documented local-cross-encoder fallback behind the same interface.
 - **Foundry preview surfaces:** some Foundry agent/tool APIs are preview/experimental and may
