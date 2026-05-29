@@ -36,6 +36,8 @@ resource foundry 'Microsoft.CognitiveServices/accounts@2025-04-01-preview' = {
   location: location
   kind: 'AIServices'
   sku: { name: 'S0' }
+  // A system-assigned managed identity is required for Foundry project creation.
+  identity: { type: 'SystemAssigned' }
   properties: {
     allowProjectManagement: true
     customSubDomainName: '${baseName}-foundry'
@@ -46,6 +48,7 @@ resource project 'Microsoft.CognitiveServices/accounts/projects@2025-04-01-previ
   parent: foundry
   name: '${baseName}-project'
   location: location
+  identity: { type: 'SystemAssigned' }
   properties: {}
 }
 
