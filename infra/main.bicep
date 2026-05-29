@@ -1,15 +1,15 @@
 @description('Primary location for all resources. Restricted to regions where gpt-4o (2024-11-20), text-embedding-3-small, and Azure AI Search (with semantic ranker) are all available on the Standard deployment type. Note: text-embedding-3-small is NOT available in most EU regions; switzerlandnorth is the only EU option.')
 @allowed([
-  'eastus2'
-  'eastus'
-  'westus'
-  'canadaeast'
   'switzerlandnorth'
-  'australiaeast'
+  'westus'
   'japaneast'
+  'australiaeast'
   'uaenorth'
+  'canadaeast'
+  'eastus'
+  'eastus2'
 ])
-param location string = 'eastus2'
+param location string = 'switzerlandnorth'
 
 @description('Base name for resources')
 param baseName string = 'ragpipe'

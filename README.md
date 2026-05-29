@@ -74,8 +74,10 @@ python scripts/setup_agents.py  # registers the generator agent (+ Code Interpre
 
 Provisioning is restricted (in `infra/main.bicep`) to regions where `gpt-4o`,
 `text-embedding-3-small`, and Azure AI Search (with semantic ranker) are all
-available on the Standard deployment type: **eastus2** (default), eastus, westus,
-canadaeast, switzerlandnorth, australiaeast, japaneast, uaenorth.
+available on the Standard deployment type: **switzerlandnorth** (default), westus,
+japaneast, australiaeast, uaenorth, canadaeast, eastus, eastus2. (The US regions
+eastus/eastus2 are frequently capacity-constrained for Foundry; switzerlandnorth
+is the default to avoid that and keep EU data residency.)
 
 `text-embedding-3-small` is not offered in most EU regions — `switzerlandnorth` is
 the only EU option here. If you need another EU region, switch
