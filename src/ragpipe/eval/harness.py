@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass, field
 from statistics import mean
 from typing import Awaitable, Callable
@@ -40,10 +41,34 @@ async def run_harness(
     return await evaluator_fn(records)
 
 
+def _is_valid(value: object) -> bool:
+    """A usable metric score: a real number that is not NaN/inf."""
+    return isinstance(value, (int, float)) and math.isfinite(value)
+
+
 def aggregate(records: list[EvalRecord]) -> dict[str, float]:
+    """Mean of each metric across records, ignoring missing/NaN scores.
+
+    RAGAS occasionally returns NaN for a single item (e.g. the LLM judge emits an
+    unparseable response for one statement). Averaging only the valid scores keeps
+    one flaky judge call from poisoning the whole metric's mean. Metrics with no
+    valid scores at all are omitted.
+    """
     keys = {k for r in records for k in r.metrics}
+    means: dict[str, float] = {}
+    for k in keys:
+        valid = [r.metrics[k] for r in records if _is_valid(r.metrics.get(k))]
+        if valid:
+            means[k] = mean(valid)
+    return means
+
+
+def coverage(records: list[EvalRecord]) -> dict[str, tuple[int, int]]:
+    """Per-metric (valid_count, total_count) so dropped/NaN scores are visible."""
+    keys = {k for r in records for k in r.metrics}
+    total = len(records)
     return {
-        k: mean([r.metrics[k] for r in records if k in r.metrics]) for k in keys
+        k: (sum(1 for r in records if _is_valid(r.metrics.get(k))), total) for k in keys
     }
 
 

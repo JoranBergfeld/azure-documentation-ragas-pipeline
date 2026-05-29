@@ -3,11 +3,23 @@ from __future__ import annotations
 
 import asyncio
 import json
+import math
 
 from ragpipe.app_wiring import build_pipeline_fn
 from ragpipe.config import Settings
-from ragpipe.eval.harness import aggregate, build_ragas_evaluator, run_harness
+from ragpipe.eval.harness import aggregate, build_ragas_evaluator, coverage, run_harness
 from ragpipe.eval.testset import load_testset
+
+
+def _clean(value):
+    """Replace non-finite floats (NaN/inf) with None so the output is valid JSON."""
+    if isinstance(value, float) and not math.isfinite(value):
+        return None
+    if isinstance(value, dict):
+        return {k: _clean(v) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_clean(v) for v in value]
+    return value
 
 
 def main() -> None:  # pragma: no cover - integration entry point
@@ -18,11 +30,17 @@ def main() -> None:  # pragma: no cover - integration entry point
 
     records = asyncio.run(run_harness(items, pipeline_fn, evaluator_fn))
     means = aggregate(records)
+    cov = {k: {"valid": v, "total": t} for k, (v, t) in coverage(records).items()}
+    payload = _clean(
+        {
+            "means": means,
+            "coverage": cov,
+            "records": [r.__dict__ for r in records],
+        }
+    )
     with open("eval_results.json", "w") as f:
-        json.dump(
-            {"means": means, "records": [r.__dict__ for r in records]}, f, indent=2
-        )
-    print(json.dumps(means, indent=2))
+        json.dump(payload, f, indent=2, allow_nan=False)
+    print(json.dumps({"means": means, "coverage": cov}, indent=2))
 
 
 if __name__ == "__main__":  # pragma: no cover
