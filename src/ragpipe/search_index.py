@@ -22,7 +22,9 @@ VECTOR_PROFILE_NAME = "default-vector"
 
 def build_index(name: str, vector_dimensions: int) -> SearchIndex:
     fields = [
-        SimpleField(name="id", type=SearchFieldDataType.String, key=True),
+        # filterable=True is required: the semantic reranker restricts to the
+        # RRF-fused candidate set via a search.in(id, ...) $filter expression.
+        SimpleField(name="id", type=SearchFieldDataType.String, key=True, filterable=True),
         SearchableField(name="title", type=SearchFieldDataType.String),
         SimpleField(name="url", type=SearchFieldDataType.String, filterable=True),
         SimpleField(name="chunk_id", type=SearchFieldDataType.Int32),

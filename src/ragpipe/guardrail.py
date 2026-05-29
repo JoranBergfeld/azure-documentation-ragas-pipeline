@@ -61,16 +61,23 @@ def build_ragas_faithfulness(settings) -> MetricFn:  # pragma: no cover
     """Build a faithfulness metric callable backed by Foundry models via RAGAS."""
     _ensure_ragas_importable()
 
+    from azure.identity import DefaultAzureCredential, get_bearer_token_provider
     from langchain_openai import AzureChatOpenAI
     from ragas.dataset_schema import SingleTurnSample
     from ragas.llms import LangchainLLMWrapper
     from ragas.metrics import Faithfulness
 
+    from ragpipe.embeddings import openai_endpoint_from_project
+
+    token_provider = get_bearer_token_provider(
+        DefaultAzureCredential(), "https://cognitiveservices.azure.com/.default"
+    )
     judge = LangchainLLMWrapper(
         AzureChatOpenAI(
-            azure_endpoint=settings.foundry_project_endpoint,
+            azure_endpoint=openai_endpoint_from_project(settings.foundry_project_endpoint),
             azure_deployment=settings.foundry_chat_model,
             api_version="2024-10-21",
+            azure_ad_token_provider=token_provider,
         )
     )
     metric = Faithfulness(llm=judge)

@@ -54,6 +54,7 @@ def build_ragas_evaluator(settings):  # pragma: no cover
 
         _ensure_ragas_importable()
 
+        from azure.identity import DefaultAzureCredential, get_bearer_token_provider
         from datasets import Dataset
         from langchain_openai import AzureChatOpenAI, AzureOpenAIEmbeddings
         from ragas import evaluate
@@ -65,6 +66,13 @@ def build_ragas_evaluator(settings):  # pragma: no cover
             context_recall,
             faithfulness,
         )
+
+        from ragpipe.embeddings import openai_endpoint_from_project
+
+        token_provider = get_bearer_token_provider(
+            DefaultAzureCredential(), "https://cognitiveservices.azure.com/.default"
+        )
+        openai_endpoint = openai_endpoint_from_project(settings.foundry_project_endpoint)
 
         ds = Dataset.from_list(
             [
@@ -79,16 +87,18 @@ def build_ragas_evaluator(settings):  # pragma: no cover
         )
         llm = LangchainLLMWrapper(
             AzureChatOpenAI(
-                azure_endpoint=settings.foundry_project_endpoint,
+                azure_endpoint=openai_endpoint,
                 azure_deployment=settings.foundry_chat_model,
                 api_version="2024-10-21",
+                azure_ad_token_provider=token_provider,
             )
         )
         emb = LangchainEmbeddingsWrapper(
             AzureOpenAIEmbeddings(
-                azure_endpoint=settings.foundry_project_endpoint,
+                azure_endpoint=openai_endpoint,
                 azure_deployment=settings.foundry_embedding_model,
                 api_version="2024-10-21",
+                azure_ad_token_provider=token_provider,
             )
         )
         result = evaluate(
