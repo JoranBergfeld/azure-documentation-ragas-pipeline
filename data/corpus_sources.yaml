@@ -1,0 +1,12 @@
+# Microsoft Learn articles forming the RAG corpus.
+sources:
+  - https://learn.microsoft.com/azure/search/hybrid-search-overview
+  - https://learn.microsoft.com/azure/search/hybrid-search-ranking
+  - https://learn.microsoft.com/azure/search/semantic-search-overview
+  - https://learn.microsoft.com/azure/search/search-relevance-overview
+  - https://learn.microsoft.com/agent-framework/workflows/
+  - https://learn.microsoft.com/agent-framework/workflows/executors
+  - https://learn.microsoft.com/agent-framework/workflows/edges
+  - https://learn.microsoft.com/azure/foundry/concepts/retrieval-augmented-generation
+  - https://learn.microsoft.com/azure/foundry/concepts/evaluation-evaluators/rag-evaluators
+  - https://learn.microsoft.com/agent-framework/agents/providers/microsoft-foundry
