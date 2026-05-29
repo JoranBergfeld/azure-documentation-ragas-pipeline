@@ -60,7 +60,7 @@ the live run and the evaluation results.
 
 ## 4. Architecture
 
-### 4.1 Strategy A — the decomposed Workflow
+### 4.1 The decomposed Workflow
 
 Orchestrated as a Microsoft Agent Framework **Workflow** (graph API: `WorkflowBuilder`,
 executors, edges, a conditional edge for the loop). Each executor has a single responsibility and
@@ -169,7 +169,7 @@ Azure-native approach first; the fallback is documented, not built.)*
 
 ## 7. Visualization
 
-- **Structure diagram:** `WorkflowViz` exports the Strategy-A workflow to Mermaid/Graphviz; the
+- **Structure diagram:** `WorkflowViz` exports the workflow to Mermaid/Graphviz; the
   rendered diagram is committed to `docs/` and shown in the dashboard's "Architecture" view.
 - **Streamlit dashboard** (`app/dashboard.py`):
   - *Run* tab: enter a query → stages light up in sequence showing each stage's chunks and scores
@@ -219,7 +219,7 @@ A single typed settings module loads from environment / `.env`:
   client; the guardrail against a stubbed RAGAS judge; the loop logic (passes through, loops then
   passes, loops then exhausts).
 - **Integration (opt-in, requires Azure):** a smoke test that runs one query end-to-end through
-  Strategy A and Strategy B and asserts a well-formed answer + trace.
+  the pipeline and asserts a well-formed answer + trace.
 - **Eval as test:** the RAGAS harness on the hand-authored test set, with non-blocking thresholds
   reported (not hard CI gates initially).
 
@@ -253,7 +253,7 @@ ragas-infused-pipeline/
 ## 13. Milestones (suggested build order)
 
 1. Infra (azd+Bicep) + ingestion → a populated Azure AI Search index.
-2. Strategy A retrieval executors (dense, BM25, RRF, rerank) + trace, verified standalone.
+2. Retrieval executors (dense, BM25, RRF, rerank) + trace, verified standalone.
 3. Generator agent (registered in Foundry, with Code Interpreter tool) + workflow wiring +
    WorkflowViz export.
 4. RAGAS faithfulness guardrail + loop.
