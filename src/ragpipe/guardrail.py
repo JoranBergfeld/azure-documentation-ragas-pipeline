@@ -81,3 +81,26 @@ def build_ragas_faithfulness(settings) -> MetricFn:  # pragma: no cover
         return float(await metric.single_turn_ascore(sample))
 
     return metric_fn
+
+
+from enum import Enum
+
+
+class LoopDecision(str, Enum):
+    PASS = "pass"
+    RETRY = "retry"
+    EXHAUSTED = "exhausted"
+
+
+def decide_next(
+    score: float | None, threshold: float, attempt: int, max_retries: int
+) -> LoopDecision:
+    """Decide whether to accept the answer, retry, or give up.
+
+    A missing score (judge failure) is fail-closed: never PASS.
+    """
+    if score is not None and score >= threshold:
+        return LoopDecision.PASS
+    if attempt < max_retries:
+        return LoopDecision.RETRY
+    return LoopDecision.EXHAUSTED
