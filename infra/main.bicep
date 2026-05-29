@@ -1,15 +1,15 @@
-@description('Primary location for all resources. Restricted to regions where gpt-4o (2024-11-20), text-embedding-3-large, and Azure AI Search (with semantic ranker) are all available on the Standard deployment type.')
+@description('Primary location for all resources. Restricted to regions where gpt-4o (2024-11-20), text-embedding-3-small, and Azure AI Search (with semantic ranker) are all available on the Standard deployment type. Note: text-embedding-3-small is NOT available in most EU regions; switzerlandnorth is the only EU option.')
 @allowed([
-  'swedencentral'
-  'francecentral'
-  'norwayeast'
-  'switzerlandnorth'
-  'uksouth'
-  'eastus'
   'eastus2'
-  'westus3'
+  'eastus'
+  'westus'
+  'canadaeast'
+  'switzerlandnorth'
+  'australiaeast'
+  'japaneast'
+  'uaenorth'
 ])
-param location string = 'swedencentral'
+param location string = 'eastus2'
 
 @description('Base name for resources')
 param baseName string = 'ragpipe'
@@ -17,8 +17,8 @@ param baseName string = 'ragpipe'
 @description('Chat model deployment name')
 param chatModel string = 'gpt-4o'
 
-@description('Embedding model deployment name. text-embedding-3-large is available in all allowed regions (including swedencentral); text-embedding-3-small is NOT available in swedencentral.')
-param embeddingModel string = 'text-embedding-3-large'
+@description('Embedding model deployment name. text-embedding-3-small must be deployed in one of the allowed regions above (it is not available in swedencentral).')
+param embeddingModel string = 'text-embedding-3-small'
 
 resource search 'Microsoft.Search/searchServices@2024-06-01-preview' = {
   name: '${baseName}-search'
