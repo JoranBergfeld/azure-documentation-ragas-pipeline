@@ -135,6 +135,29 @@ def _upload_in_batches(
         print(f"  uploaded {min(start + batch_size, len(docs))}/{len(docs)} chunks", flush=True)
 
 
+def prune_stale_documents(
+    search_client: Any, fresh_ids: set[str], batch_size: int = 500
+) -> int:
+    """Delete indexed chunks whose id is not in the freshly-uploaded set.
+
+    Uploading is an upsert keyed on id, so re-ingesting a *changed* corpus
+    overwrites matching chunks but leaves orphans from a previous, larger corpus
+    behind (inflating the doc count and surfacing dead content). We can't just
+    recreate the index — a Foundry knowledge source binds to it — so instead we
+    enumerate current ids and delete the ones no longer present.
+
+    Safe under indexing lag: stale chunks are old and already searchable, and
+    fresh chunks are excluded by membership in `fresh_ids` even if their upload
+    hasn't become searchable yet.
+    """
+    existing = [doc["id"] for doc in search_client.search(search_text="*", select=["id"])]
+    stale = [doc_id for doc_id in existing if doc_id not in fresh_ids]
+    for start in range(0, len(stale), batch_size):
+        batch = [{"id": doc_id} for doc_id in stale[start : start + batch_size]]
+        search_client.delete_documents(batch)
+    return len(stale)
+
+
 def main() -> None:  # pragma: no cover - integration entry point
     import yaml
     from azure.identity import DefaultAzureCredential
@@ -163,9 +186,10 @@ def main() -> None:  # pragma: no cover - integration entry point
     docs = build_documents(pages, embed_batch_fn=embed_batch)
     search_client = SearchClient(settings.search_endpoint, settings.search_index, cred)
     _upload_in_batches(search_client, docs)
+    pruned = prune_stale_documents(search_client, fresh_ids={d["id"] for d in docs})
     print(
         f"Uploaded {len(docs)} chunks from {len(pages)} pages "
-        f"to index '{settings.search_index}'."
+        f"to index '{settings.search_index}' (pruned {pruned} stale chunks)."
     )
 
 
