@@ -66,3 +66,19 @@ def build_index(name: str, vector_dimensions: int) -> SearchIndex:
 
 def create_index(client: SearchIndexClient, name: str, vector_dimensions: int) -> None:
     client.create_or_update_index(build_index(name, vector_dimensions))
+
+
+def recreate_index(
+    client: SearchIndexClient, name: str, vector_dimensions: int
+) -> None:  # pragma: no cover - live Azure call
+    """Delete the index if it exists, then create it fresh.
+
+    create_or_update_index keeps existing documents, so re-ingesting a changed
+    corpus would leave stale chunks behind (and double-count). A full reingest
+    should start from an empty index, so we delete first.
+    """
+    try:
+        client.delete_index(name)
+    except Exception:  # noqa: BLE001 - absent index is fine; nothing to delete
+        pass
+    client.create_index(build_index(name, vector_dimensions))

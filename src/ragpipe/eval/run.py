@@ -6,7 +6,7 @@ import json
 import math
 
 from ragpipe.app_wiring import build_pipeline_fn
-from ragpipe.config import Settings
+from ragpipe.config import Settings, TestsetMode
 from ragpipe.eval.harness import (
     aggregate,
     build_per_stage_context_evaluator,
@@ -14,7 +14,7 @@ from ragpipe.eval.harness import (
     coverage,
     run_harness,
 )
-from ragpipe.eval.testset import load_testset
+from ragpipe.eval.testset import build_synthetic_generator, load_testset
 
 
 def _clean(value):
@@ -28,9 +28,30 @@ def _clean(value):
     return value
 
 
+def _sample_corpus_docs(settings, limit: int = 40) -> list[dict]:  # pragma: no cover - live Azure
+    """Pull a sample of indexed chunks to seed synthetic test-set generation.
+
+    Reuses the already-ingested content in Azure AI Search so we don't re-fetch the
+    corpus. Returns [{"content", "url"}].
+    """
+    from azure.identity import DefaultAzureCredential
+    from azure.search.documents import SearchClient
+
+    client = SearchClient(
+        settings.search_endpoint, settings.search_index, DefaultAzureCredential()
+    )
+    results = client.search(search_text="*", top=limit, select=["content", "url"])
+    return [{"content": r["content"], "url": r.get("url", "")} for r in results]
+
+
 def main() -> None:  # pragma: no cover - integration entry point
     settings = Settings.from_env()
-    items = load_testset(settings.testset_mode)
+    if settings.testset_mode is TestsetMode.SYNTHETIC:
+        print("TESTSET_MODE=synthetic: generating a test set from indexed corpus…")
+        synthetic_fn = build_synthetic_generator(settings, _sample_corpus_docs(settings))
+        items = load_testset(settings.testset_mode, synthetic_fn=synthetic_fn)
+    else:
+        items = load_testset(settings.testset_mode)
     pipeline_fn = build_pipeline_fn(settings)
     evaluator_fn = build_ragas_evaluator(settings)
 

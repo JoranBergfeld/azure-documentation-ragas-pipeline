@@ -44,39 +44,31 @@ def load_testset(
     return synthetic_fn()
 
 
-def build_synthetic_generator(settings, corpus_docs):  # pragma: no cover
-    """Return a synthetic_fn that builds a test set from corpus docs via RAGAS."""
+def build_synthetic_generator(
+    settings, corpus_docs, testset_size: int = 15
+):  # pragma: no cover - live Azure call
+    """Return a synthetic_fn that builds a test set from corpus docs via RAGAS.
+
+    `corpus_docs` is a list of {"content": str, "url": str}. Uses the same
+    OpenAI-route + Entra auth as the rest of the eval (the embedding model is an
+    Azure OpenAI deployment, served on /openai — not FoundryEmbeddingClient).
+    """
     def synthetic_fn() -> list[TestItem]:
+        from ragpipe.eval.harness import _build_ragas_clients
         from ragpipe.guardrail import _ensure_ragas_importable
 
         _ensure_ragas_importable()
 
         from langchain_core.documents import Document
-        from langchain_openai import AzureChatOpenAI, AzureOpenAIEmbeddings
-        from ragas.embeddings import LangchainEmbeddingsWrapper
-        from ragas.llms import LangchainLLMWrapper
         from ragas.testset import TestsetGenerator
 
-        llm = LangchainLLMWrapper(
-            AzureChatOpenAI(
-                azure_endpoint=settings.foundry_project_endpoint,
-                azure_deployment=settings.foundry_chat_model,
-                api_version="2024-10-21",
-            )
-        )
-        emb = LangchainEmbeddingsWrapper(
-            AzureOpenAIEmbeddings(
-                azure_endpoint=settings.foundry_project_endpoint,
-                azure_deployment=settings.foundry_embedding_model,
-                api_version="2024-10-21",
-            )
-        )
+        llm, emb = _build_ragas_clients(settings)
         docs = [
-            Document(page_content=d["content"], metadata={"url": d["url"]})
+            Document(page_content=d["content"], metadata={"url": d.get("url", "")})
             for d in corpus_docs
         ]
         generator = TestsetGenerator(llm=llm, embedding_model=emb)
-        dataset = generator.generate_with_langchain_docs(docs, testset_size=15)
+        dataset = generator.generate_with_langchain_docs(docs, testset_size=testset_size)
         items: list[TestItem] = []
         for row in dataset.to_list():
             items.append(
