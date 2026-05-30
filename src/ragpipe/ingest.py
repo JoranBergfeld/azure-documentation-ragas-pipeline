@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import base64
 import hashlib
-from concurrent.futures import ThreadPoolExecutor
+import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any, Callable
 
 from bs4 import BeautifulSoup
@@ -52,8 +53,16 @@ def build_documents(
             )
             chunks.append(chunk)
 
+    print(f"Embedding {len(chunks)} chunks (max_workers={max_workers})…", flush=True)
+    vectors: list[list[float]] = [None] * len(chunks)  # type: ignore[list-item]
+    done = 0
     with ThreadPoolExecutor(max_workers=max_workers) as pool:
-        vectors = list(pool.map(embed_fn, chunks))
+        futures = {pool.submit(embed_fn, chunk): idx for idx, chunk in enumerate(chunks)}
+        for future in as_completed(futures):
+            vectors[futures[future]] = future.result()
+            done += 1
+            if done % 200 == 0 or done == len(chunks):
+                print(f"  embedded {done}/{len(chunks)} chunks", flush=True)
 
     return [
         {**meta, "content": chunk, "content_vector": vector}
@@ -62,28 +71,49 @@ def build_documents(
 
 
 def fetch_pages(
-    urls: list[str], max_workers: int = 16
+    urls: list[str], max_workers: int = 6, max_retries: int = 4
 ) -> list[dict[str, Any]]:  # pragma: no cover - network
-    """Fetch and extract pages concurrently; skip (and log) any that fail."""
+    """Fetch and extract pages concurrently; retry throttling, skip+log real failures.
+
+    learn.microsoft.com rate-limits aggressive crawls (HTTP 429), so concurrency is
+    modest and 429/5xx responses are retried with exponential backoff (honoring a
+    Retry-After header when present). Genuine 404s are skipped immediately. Failures
+    are logged with the actual status code, not just the exception type, so a high
+    skip rate is diagnosable.
+    """
+    import collections
+
     import httpx
 
     client = httpx.Client(
         timeout=30, follow_redirects=True, headers={"User-Agent": "ragpipe-ingest"}
     )
+    skip_reasons: collections.Counter[str] = collections.Counter()
 
     def fetch_one(url: str) -> dict[str, Any] | None:
-        try:
-            resp = client.get(url)
-            resp.raise_for_status()
-            soup = BeautifulSoup(resp.text, "html.parser")
-            title = soup.title.string.strip() if soup.title and soup.title.string else url
-            text = html_to_text(resp.text)
-            if not text.strip():
+        for attempt in range(max_retries):
+            try:
+                resp = client.get(url)
+                if resp.status_code in (429, 500, 502, 503, 504):
+                    retry_after = resp.headers.get("retry-after")
+                    delay = float(retry_after) if retry_after else min(2**attempt, 30)
+                    time.sleep(delay)
+                    continue
+                resp.raise_for_status()
+                soup = BeautifulSoup(resp.text, "html.parser")
+                title = (
+                    soup.title.string.strip() if soup.title and soup.title.string else url
+                )
+                text = html_to_text(resp.text)
+                return {"url": url, "title": title, "text": text} if text.strip() else None
+            except httpx.HTTPStatusError as exc:
+                skip_reasons[f"HTTP {exc.response.status_code}"] += 1
                 return None
-            return {"url": url, "title": title, "text": text}
-        except Exception as exc:  # noqa: BLE001 - one bad URL must not abort the crawl
-            print(f"  skip {url}: {type(exc).__name__}", flush=True)
-            return None
+            except Exception as exc:  # noqa: BLE001 - one bad URL must not abort the crawl
+                skip_reasons[type(exc).__name__] += 1
+                return None
+        skip_reasons["throttled (gave up)"] += 1
+        return None
 
     pages: list[dict[str, Any]] = []
     with ThreadPoolExecutor(max_workers=max_workers) as pool:
@@ -94,6 +124,8 @@ def fetch_pages(
                 print(f"  fetched {i}/{len(urls)} ({len(pages)} ok)", flush=True)
     client.close()
     print(f"Fetched {len(pages)}/{len(urls)} pages.", flush=True)
+    if skip_reasons:
+        print(f"  skipped: {dict(skip_reasons)}", flush=True)
     return pages
 
 

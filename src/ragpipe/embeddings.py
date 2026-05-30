@@ -36,12 +36,20 @@ def openai_endpoint_from_project(project_endpoint: str) -> str:
 
 
 def build_embed_fn(
-    settings: Settings, api_version: str = "2024-10-21"
+    settings: Settings,
+    api_version: str = "2024-10-21",
+    timeout: float = 30.0,
+    max_retries: int = 5,
 ) -> Callable[[str], list[float]]:  # pragma: no cover - live Azure call
     """Return a synchronous `embed(text) -> list[float]` over Azure OpenAI + Entra auth.
 
     The underlying `openai` client is synchronous, so the returned callable is safe to
     invoke from inside a running event loop (the retrievers call it that way).
+
+    `timeout` and `max_retries` are essential for bulk ingestion: without a request
+    timeout a throttled/stalled call blocks its worker thread indefinitely (the
+    openai client otherwise waits on the socket forever). With them, 429s back off
+    and retry a bounded number of times, then raise instead of hanging.
     """
     from azure.identity import DefaultAzureCredential, get_bearer_token_provider
     from openai import AzureOpenAI
@@ -53,6 +61,8 @@ def build_embed_fn(
         azure_endpoint=openai_endpoint_from_project(settings.foundry_project_endpoint),
         azure_ad_token_provider=token_provider,
         api_version=api_version,
+        timeout=timeout,
+        max_retries=max_retries,
     )
 
     def embed(text: str) -> list[float]:
