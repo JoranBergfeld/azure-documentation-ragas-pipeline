@@ -215,7 +215,7 @@ def main() -> None:  # pragma: no cover - UI entry point
         else:
             st.info(
                 f"No `{EVAL_RESULTS_PATH}` yet. Generate it by running the offline "
-                "harness:\n\n```bash\npython -m ragpipe.eval.run\n```\n\n"
+                "harness:\n\n```bash\nuv run python -m ragpipe.eval.run\n```\n\n"
                 "Then reload this tab."
             )
 

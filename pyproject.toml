@@ -17,8 +17,14 @@ dependencies = [
     "beautifulsoup4",
 ]
 
-[project.optional-dependencies]
+[dependency-groups]
 dev = ["pytest", "pytest-asyncio", "pytest-mock", "ruff"]
+
+[tool.uv]
+# agent-framework currently ships only pre-release (beta) builds, and
+# azure-search-documents pulls a pre-release marker; allow them so `uv sync`
+# / `uv lock` resolve without needing --prerelease=allow on the CLI.
+prerelease = "allow"
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

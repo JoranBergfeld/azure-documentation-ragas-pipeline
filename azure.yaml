@@ -5,5 +5,5 @@ hooks:
   postprovision:
     shell: sh
     run: |
-      python -m ragpipe.ingest
-      python scripts/setup_agents.py
+      uv run python -m ragpipe.ingest
+      uv run python scripts/setup_agents.py
