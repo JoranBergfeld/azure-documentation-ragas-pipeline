@@ -35,6 +35,27 @@ def openai_endpoint_from_project(project_endpoint: str) -> str:
     return f"https://{account}.openai.azure.com/"
 
 
+def _build_client(settings: Settings, api_version: str, timeout: float, max_retries: int):  # pragma: no cover - live Azure
+    """Build an AzureOpenAI client for the account's /openai endpoint with Entra auth.
+
+    `timeout` + `max_retries` matter for bulk work: without a timeout a throttled
+    call blocks its worker thread indefinitely; bounded retries back off on 429s.
+    """
+    from azure.identity import DefaultAzureCredential, get_bearer_token_provider
+    from openai import AzureOpenAI
+
+    token_provider = get_bearer_token_provider(
+        DefaultAzureCredential(), COGNITIVE_SERVICES_SCOPE
+    )
+    return AzureOpenAI(
+        azure_endpoint=openai_endpoint_from_project(settings.foundry_project_endpoint),
+        azure_ad_token_provider=token_provider,
+        api_version=api_version,
+        timeout=timeout,
+        max_retries=max_retries,
+    )
+
+
 def build_embed_fn(
     settings: Settings,
     api_version: str = "2024-10-21",
@@ -51,19 +72,7 @@ def build_embed_fn(
     openai client otherwise waits on the socket forever). With them, 429s back off
     and retry a bounded number of times, then raise instead of hanging.
     """
-    from azure.identity import DefaultAzureCredential, get_bearer_token_provider
-    from openai import AzureOpenAI
-
-    token_provider = get_bearer_token_provider(
-        DefaultAzureCredential(), COGNITIVE_SERVICES_SCOPE
-    )
-    client = AzureOpenAI(
-        azure_endpoint=openai_endpoint_from_project(settings.foundry_project_endpoint),
-        azure_ad_token_provider=token_provider,
-        api_version=api_version,
-        timeout=timeout,
-        max_retries=max_retries,
-    )
+    client = _build_client(settings, api_version, timeout, max_retries)
 
     def embed(text: str) -> list[float]:
         result = client.embeddings.create(
@@ -88,19 +97,7 @@ def build_batch_embed_fn(
     one-request-per-chunk approach thrashed on 429s). Results are returned in input
     order (the API guarantees response `index` ordering, which we sort on).
     """
-    from azure.identity import DefaultAzureCredential, get_bearer_token_provider
-    from openai import AzureOpenAI
-
-    token_provider = get_bearer_token_provider(
-        DefaultAzureCredential(), COGNITIVE_SERVICES_SCOPE
-    )
-    client = AzureOpenAI(
-        azure_endpoint=openai_endpoint_from_project(settings.foundry_project_endpoint),
-        azure_ad_token_provider=token_provider,
-        api_version=api_version,
-        timeout=timeout,
-        max_retries=max_retries,
-    )
+    client = _build_client(settings, api_version, timeout, max_retries)
 
     def embed_batch(texts: list[str]) -> list[list[float]]:
         result = client.embeddings.create(

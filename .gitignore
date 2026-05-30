@@ -6,3 +6,4 @@ __pycache__/
 .env
 eval_results.json
 infra/main.json
+data/testset.synthetic.jsonl

@@ -24,7 +24,6 @@ def make_deps(
         threshold=settings.faithfulness_threshold,
         max_retries=settings.max_retries,
         rrf_k=settings.rrf_k,
-        top_k=settings.top_k,
     )
 
 
