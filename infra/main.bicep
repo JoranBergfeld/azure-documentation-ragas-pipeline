@@ -96,7 +96,7 @@ resource embedding 'Microsoft.CognitiveServices/accounts/deployments@2025-04-01-
   parent: foundry
   name: embeddingModel
   dependsOn: [chat]
-  sku: { name: 'Standard', capacity: 10 }
+  sku: { name: 'Standard', capacity: 120 }
   properties: {
     model: { format: 'OpenAI', name: embeddingModel }
   }
