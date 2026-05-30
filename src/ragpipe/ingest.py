@@ -3,7 +3,7 @@ from __future__ import annotations
 import base64
 import hashlib
 import time
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import ThreadPoolExecutor
 from typing import Any, Callable
 
 from bs4 import BeautifulSoup
@@ -26,16 +26,17 @@ def _doc_id(url: str, index: int) -> str:
 
 def build_documents(
     pages: list[dict[str, Any]],
-    embed_fn: Callable[[str], list[float]],
+    embed_batch_fn: Callable[[list[str]], list[list[float]]],
     max_chars: int = 2000,
     overlap: int = 200,
-    max_workers: int = 8,
+    batch_size: int = 64,
 ) -> list[dict[str, Any]]:
     """Turn fetched pages into Azure AI Search documents.
 
-    Embeds chunks concurrently (`max_workers` threads) while preserving order, so
-    a large corpus is not embedded one-chunk-at-a-time. `embed_fn` must be safe to
-    call from multiple threads (the OpenAI client is).
+    Embeds chunks in batches of `batch_size` per request (`embed_batch_fn` sends an
+    array of inputs in one call), so a large corpus costs a few dozen requests
+    instead of thousands — staying well under the deployment's per-10s request
+    limit. Batches run sequentially with progress logging.
     """
     metas: list[dict[str, Any]] = []
     chunks: list[str] = []
@@ -53,16 +54,12 @@ def build_documents(
             )
             chunks.append(chunk)
 
-    print(f"Embedding {len(chunks)} chunks (max_workers={max_workers})…", flush=True)
-    vectors: list[list[float]] = [None] * len(chunks)  # type: ignore[list-item]
-    done = 0
-    with ThreadPoolExecutor(max_workers=max_workers) as pool:
-        futures = {pool.submit(embed_fn, chunk): idx for idx, chunk in enumerate(chunks)}
-        for future in as_completed(futures):
-            vectors[futures[future]] = future.result()
-            done += 1
-            if done % 200 == 0 or done == len(chunks):
-                print(f"  embedded {done}/{len(chunks)} chunks", flush=True)
+    total = len(chunks)
+    print(f"Embedding {total} chunks in batches of {batch_size}…", flush=True)
+    vectors: list[list[float]] = []
+    for start in range(0, total, batch_size):
+        vectors.extend(embed_batch_fn(chunks[start : start + batch_size]))
+        print(f"  embedded {min(start + batch_size, total)}/{total} chunks", flush=True)
 
     return [
         {**meta, "content": chunk, "content_vector": vector}
@@ -145,7 +142,7 @@ def main() -> None:  # pragma: no cover - integration entry point
     from azure.search.documents.indexes import SearchIndexClient
 
     from ragpipe.config import Settings
-    from ragpipe.embeddings import build_embed_fn
+    from ragpipe.embeddings import build_batch_embed_fn
     from ragpipe.search_index import create_index
 
     settings = Settings.from_env()
@@ -153,18 +150,17 @@ def main() -> None:  # pragma: no cover - integration entry point
         urls = yaml.safe_load(f)["sources"]
 
     cred = DefaultAzureCredential()
-    embed = build_embed_fn(settings)
+    embed_batch = build_batch_embed_fn(settings)
 
     pages = fetch_pages(urls)
     if not pages:
         raise SystemExit("No pages fetched; nothing to ingest.")
 
-    first_vec = embed(pages[0]["text"][:100])
+    first_vec = embed_batch([pages[0]["text"][:100]])[0]
     index_client = SearchIndexClient(settings.search_endpoint, cred)
     create_index(index_client, settings.search_index, vector_dimensions=len(first_vec))
 
-    print(f"Embedding chunks from {len(pages)} pages…", flush=True)
-    docs = build_documents(pages, embed_fn=embed)
+    docs = build_documents(pages, embed_batch_fn=embed_batch)
     search_client = SearchClient(settings.search_endpoint, settings.search_index, cred)
     _upload_in_batches(search_client, docs)
     print(

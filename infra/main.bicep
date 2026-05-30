@@ -88,6 +88,10 @@ resource chat 'Microsoft.CognitiveServices/accounts/deployments@2025-04-01-previ
   }
 }
 
+// capacity sets the deployment's rate limit (≈ capacity req/10s and capacity*1000
+// tokens/min). The default of 10 is far too low for bulk corpus ingestion (every
+// worker thrashes on 429s); 120 lets ~580 pages ingest in minutes. Standard
+// deployments bill per token consumed, not per capacity, so this is free headroom.
 resource embedding 'Microsoft.CognitiveServices/accounts/deployments@2025-04-01-preview' = {
   parent: foundry
   name: embeddingModel

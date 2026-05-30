@@ -72,3 +72,41 @@ def build_embed_fn(
         return list(result.data[0].embedding)
 
     return embed
+
+
+def build_batch_embed_fn(
+    settings: Settings,
+    api_version: str = "2024-10-21",
+    timeout: float = 60.0,
+    max_retries: int = 6,
+) -> Callable[[list[str]], list[list[float]]]:  # pragma: no cover - live Azure call
+    """Return `embed_batch(texts) -> list[vector]` sending many inputs per request.
+
+    The embeddings API accepts an array of inputs in a single request, so a batch
+    of N chunks costs one request instead of N. This is essential for bulk ingest:
+    it keeps total requests far under the deployment's per-10s request limit (the
+    one-request-per-chunk approach thrashed on 429s). Results are returned in input
+    order (the API guarantees response `index` ordering, which we sort on).
+    """
+    from azure.identity import DefaultAzureCredential, get_bearer_token_provider
+    from openai import AzureOpenAI
+
+    token_provider = get_bearer_token_provider(
+        DefaultAzureCredential(), COGNITIVE_SERVICES_SCOPE
+    )
+    client = AzureOpenAI(
+        azure_endpoint=openai_endpoint_from_project(settings.foundry_project_endpoint),
+        azure_ad_token_provider=token_provider,
+        api_version=api_version,
+        timeout=timeout,
+        max_retries=max_retries,
+    )
+
+    def embed_batch(texts: list[str]) -> list[list[float]]:
+        result = client.embeddings.create(
+            model=settings.foundry_embedding_model, input=texts
+        )
+        ordered = sorted(result.data, key=lambda d: d.index)
+        return [list(d.embedding) for d in ordered]
+
+    return embed_batch
