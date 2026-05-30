@@ -79,12 +79,15 @@ resource project 'Microsoft.CognitiveServices/accounts/projects@2025-04-01-previ
   properties: {}
 }
 
+// capacity 100 gives the chat model enough RPM/TPM for the generator agent AND the
+// RAGAS LLM-judge (offline eval makes many concurrent judge calls; capacity 10
+// throttled the per-stage sweep to 20s+/step). Free on GlobalStandard — billed per token.
 resource chat 'Microsoft.CognitiveServices/accounts/deployments@2025-04-01-preview' = {
   parent: foundry
   name: chatModel
-  sku: { name: 'GlobalStandard', capacity: 10 }
+  sku: { name: 'GlobalStandard', capacity: 100 }
   properties: {
-    model: { format: 'OpenAI', name: chatModel }
+    model: { format: 'OpenAI', name: chatModel, version: '2024-11-20' }
   }
 }
 
