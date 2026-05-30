@@ -31,7 +31,6 @@ class PipelineDeps:
     threshold: float = 0.7
     max_retries: int = 2
     rrf_k: int = 60
-    top_k: int = 5
 
 
 async def run_pipeline(query: str, deps: PipelineDeps) -> PipelineState:

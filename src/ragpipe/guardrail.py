@@ -1,15 +1,11 @@
 from __future__ import annotations
 
 from enum import Enum
-from typing import Awaitable, Callable, Protocol
+from typing import Awaitable, Callable
 
 from ragpipe.models import Chunk
 
 MetricFn = Callable[..., Awaitable[float]]
-
-
-class _Scorer(Protocol):
-    async def score(self, query: str, answer: str, contexts: list[Chunk]) -> float: ...
 
 
 class FaithfulnessScorer:
