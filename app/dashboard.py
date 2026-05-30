@@ -10,8 +10,51 @@ EVAL_RESULTS_PATH = "eval_results.json"
 PIPELINE_DIAGRAM_PATH = "docs/pipeline.mmd"
 
 
+def chunk_label(chunk: Any) -> str:
+    """Human-readable name for a retrieved chunk.
+
+    The document id is base64(url)_index_hash — unreadable in a trace — so prefer
+    the page title, then the URL, and only fall back to the id if both are empty.
+    """
+    if chunk.title:
+        return chunk.title
+    if chunk.url:
+        return chunk.url
+    return chunk.id
+
+
+_RETRIEVAL_STAGES = ("dense", "bm25", "fused", "reranked")
+
+
+def stage_chunk_tables(state: PipelineState) -> dict[str, list[dict[str, Any]]]:
+    """Per retrieval stage, a ranked table of readable chunk rows for the Run tab.
+
+    {stage: [{rank, title, score, url}, ...]} in pipeline order. Shows the title
+    (not the opaque id) so you can see *which documents* each stage surfaced and
+    how reranking reorders them.
+    """
+    by_stage = {
+        "dense": state.dense,
+        "bm25": state.bm25,
+        "fused": state.fused,
+        "reranked": state.reranked,
+    }
+    tables: dict[str, list[dict[str, Any]]] = {}
+    for label in _RETRIEVAL_STAGES:
+        tables[label] = [
+            {
+                "rank": rank,
+                "title": chunk_label(c),
+                "score": round(c.score, 3),
+                "url": c.url,
+            }
+            for rank, c in enumerate(by_stage[label], 1)
+        ]
+    return tables
+
+
 def stage_rows(state: PipelineState) -> list[dict[str, Any]]:
-    """Flatten a PipelineState into table rows for the Run tab."""
+    """One summary row per stage: chunk count + readable titles (not raw ids)."""
     rows: list[dict[str, Any]] = []
     for label, chunks in [
         ("dense", state.dense),
@@ -19,16 +62,13 @@ def stage_rows(state: PipelineState) -> list[dict[str, Any]]:
         ("fused", state.fused),
         ("reranked", state.reranked),
     ]:
-        rows.append(
-            {
-                "stage": label,
-                "detail": ", ".join(f"{c.id}({c.score:.2f})" for c in chunks),
-            }
-        )
-    rows.append({"stage": "answer", "detail": state.answer})
+        titles = ", ".join(f"{chunk_label(c)} ({c.score:.2f})" for c in chunks)
+        rows.append({"stage": label, "count": len(chunks), "detail": titles})
+    rows.append({"stage": "answer", "count": "", "detail": state.answer})
     rows.append(
         {
             "stage": "faithfulness",
+            "count": "",
             "detail": "n/a" if state.faithfulness is None else f"{state.faithfulness:.2f}",
         }
     )
@@ -122,7 +162,18 @@ def main() -> None:  # pragma: no cover - UI entry point
                     f"Low confidence: faithfulness below threshold after {state.attempt} retries."
                 )
             st.subheader("Per-stage trace")
-            st.table(stage_rows(state))
+            st.caption(
+                "Documents surfaced at each retrieval stage (title + score), in rank "
+                "order — watch fusion merge the two lists and rerank reorder them."
+            )
+            tables = stage_chunk_tables(state)
+            for label in ("dense", "bm25", "fused", "reranked"):
+                rows = tables[label]
+                with st.expander(f"{label} — {len(rows)} chunk(s)", expanded=label == "reranked"):
+                    if rows:
+                        st.table(rows)
+                    else:
+                        st.write("_no chunks_")
 
     with tab_eval:
         st.caption(

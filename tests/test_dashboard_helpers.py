@@ -1,21 +1,49 @@
 from ragpipe.models import Chunk, PipelineState
-from app.dashboard import eval_rows, per_stage_chart_data, stage_rows
+from app.dashboard import (
+    chunk_label,
+    eval_rows,
+    per_stage_chart_data,
+    stage_chunk_tables,
+    stage_rows,
+)
 
 
-def test_stage_rows_summarizes_each_stage():
+def _state() -> PipelineState:
     state = PipelineState(query="q")
-    state.dense = [Chunk(id="a", title="t", url="u", content="x", score=0.5)]
-    state.reranked = [Chunk(id="a", title="t", url="u", content="x", score=3.2)]
+    state.dense = [Chunk(id="d1", title="Dense Doc", url="http://d", content="x", score=0.5)]
+    state.bm25 = [Chunk(id="b1", title="BM25 Doc", url="http://b", content="y", score=0.8)]
+    state.fused = [Chunk(id="f1", title="Fused Doc", url="http://f", content="z", score=0.7)]
+    state.reranked = [Chunk(id="r1", title="Reranked Doc", url="http://r", content="w", score=3.2)]
     state.answer = "final"
     state.faithfulness = 0.81
+    return state
 
-    rows = stage_rows(state)
+
+def test_stage_rows_summarizes_each_stage_with_readable_titles():
+    rows = stage_rows(_state())
 
     labels = [r["stage"] for r in rows]
-    assert "dense" in labels
-    assert "reranked" in labels
+    assert labels == ["dense", "bm25", "fused", "reranked", "answer", "faithfulness"]
     faith = next(r for r in rows if r["stage"] == "faithfulness")
     assert faith["detail"] == "0.81"
+    red = next(r for r in rows if r["stage"] == "reranked")
+    # readable title + score, NOT the opaque base64 id
+    assert "Reranked Doc (3.20)" in red["detail"]
+    assert "r1" not in red["detail"]
+    assert red["count"] == 1
+
+
+def test_chunk_label_prefers_title_then_url_then_id():
+    assert chunk_label(Chunk(id="i", title="T", url="u", content="")) == "T"
+    assert chunk_label(Chunk(id="i", title="", url="u", content="")) == "u"
+    assert chunk_label(Chunk(id="i", title="", url="", content="")) == "i"
+
+
+def test_stage_chunk_tables_are_ranked_and_readable():
+    tables = stage_chunk_tables(_state())
+    assert set(tables) == {"dense", "bm25", "fused", "reranked"}
+    row = tables["reranked"][0]
+    assert row == {"rank": 1, "title": "Reranked Doc", "score": 3.2, "url": "http://r"}
 
 
 def test_eval_rows_flattens_means_sorted_with_coverage():
