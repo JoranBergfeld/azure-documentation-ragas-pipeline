@@ -7,7 +7,13 @@ import math
 
 from ragpipe.app_wiring import build_pipeline_fn
 from ragpipe.config import Settings
-from ragpipe.eval.harness import aggregate, build_ragas_evaluator, coverage, run_harness
+from ragpipe.eval.harness import (
+    aggregate,
+    build_per_stage_context_evaluator,
+    build_ragas_evaluator,
+    coverage,
+    run_harness,
+)
 from ragpipe.eval.testset import load_testset
 
 
@@ -29,6 +35,12 @@ def main() -> None:  # pragma: no cover - integration entry point
     evaluator_fn = build_ragas_evaluator(settings)
 
     records = asyncio.run(run_harness(items, pipeline_fn, evaluator_fn))
+
+    if settings.per_stage_metrics:
+        print("Per-stage metrics enabled: scoring context_precision/recall per stage…")
+        per_stage_fn = build_per_stage_context_evaluator(settings)
+        records = asyncio.run(per_stage_fn(records))
+
     means = aggregate(records)
     cov = {k: {"valid": v, "total": t} for k, (v, t) in coverage(records).items()}
     payload = _clean(

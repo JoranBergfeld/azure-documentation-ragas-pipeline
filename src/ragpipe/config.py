@@ -33,6 +33,9 @@ class Settings:
     top_k: int = 5
     rrf_k: int = 60
     testset_mode: TestsetMode = TestsetMode.HANDAUTHORED
+    # When true, the offline eval also scores context_precision/recall at each
+    # retrieval stage (dense/bm25/fused/reranked) — a heavier per-stage sweep.
+    per_stage_metrics: bool = False
 
     @classmethod
     def from_env(cls, *, load: bool = True) -> "Settings":
@@ -51,4 +54,6 @@ class Settings:
             top_k=int(os.environ.get("TOP_K", "5")),
             rrf_k=int(os.environ.get("RRF_K", "60")),
             testset_mode=TestsetMode(os.environ.get("TESTSET_MODE", "handauthored")),
+            per_stage_metrics=os.environ.get("PER_STAGE_METRICS", "").lower()
+            in ("1", "true", "yes"),
         )

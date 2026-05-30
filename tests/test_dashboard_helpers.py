@@ -1,5 +1,5 @@
 from ragpipe.models import Chunk, PipelineState
-from app.dashboard import eval_rows, stage_rows
+from app.dashboard import eval_rows, per_stage_chart_data, stage_rows
 
 
 def test_stage_rows_summarizes_each_stage():
@@ -41,3 +41,30 @@ def test_eval_rows_without_coverage_omits_field():
 
 def test_eval_rows_empty_when_no_means():
     assert eval_rows({}) == []
+
+
+def test_eval_rows_excludes_per_stage_keys():
+    results = {"means": {"faithfulness": 0.9, "context_recall@dense": 0.5}}
+    rows = eval_rows(results)
+    assert rows == [{"metric": "faithfulness", "mean_score": 0.9}]
+
+
+def test_per_stage_chart_data_pivots_in_pipeline_order():
+    results = {
+        "means": {
+            "context_recall@reranked": 1.0,
+            "context_recall@dense": 0.5,
+            "context_precision@dense": 0.4,
+            "context_precision@reranked": 0.95,
+            "faithfulness": 0.9,  # plain key ignored
+        }
+    }
+    data = per_stage_chart_data(results)
+    # dense before reranked (pipeline order), faithfulness excluded
+    assert list(data.keys()) == ["dense", "reranked"]
+    assert data["dense"] == {"context_recall": 0.5, "context_precision": 0.4}
+    assert data["reranked"] == {"context_recall": 1.0, "context_precision": 0.95}
+
+
+def test_per_stage_chart_data_empty_without_stage_keys():
+    assert per_stage_chart_data({"means": {"faithfulness": 0.9}}) == {}

@@ -35,21 +35,48 @@ def stage_rows(state: PipelineState) -> list[dict[str, Any]]:
     return rows
 
 
-def eval_rows(results: dict[str, Any]) -> list[dict[str, Any]]:
-    """Flatten an eval_results.json into per-metric rows (mean + coverage).
+_STAGE_ORDER = ("dense", "bm25", "fused", "reranked")
 
-    Coverage (valid/total) makes visible when a metric's mean is over fewer items
-    than the full set, e.g. when RAGAS returned NaN for an item.
+
+def eval_rows(results: dict[str, Any]) -> list[dict[str, Any]]:
+    """Flatten the overall (non-per-stage) metrics into rows (mean + coverage).
+
+    Per-stage keys ('<metric>@<stage>') are excluded here and shown separately by
+    per_stage_chart_data. Coverage (valid/total) makes visible when a metric's mean
+    is over fewer items than the full set, e.g. when RAGAS returned NaN for an item.
     """
     means = results.get("means", {})
     cov = results.get("coverage", {})
     rows: list[dict[str, Any]] = []
     for k, v in sorted(means.items()):
+        if "@" in k:  # per-stage metric, handled elsewhere
+            continue
         row = {"metric": k, "mean_score": round(v, 4)}
         if k in cov:
             row["coverage"] = f"{cov[k]['valid']}/{cov[k]['total']}"
         rows.append(row)
     return rows
+
+
+def per_stage_chart_data(results: dict[str, Any]) -> dict[str, dict[str, float]]:
+    """Pivot '<metric>@<stage>' means into {stage: {metric: score}} for a grouped chart.
+
+    Returns stages in pipeline order (dense → bm25 → fused → reranked) so the chart
+    reads as the retrieval flow. Empty dict if the per-stage sweep wasn't run.
+    """
+    means = results.get("means", {})
+    by_stage: dict[str, dict[str, float]] = {}
+    for key, value in means.items():
+        if "@" not in key:
+            continue
+        metric, stage = key.split("@", 1)
+        by_stage.setdefault(stage, {})[metric] = round(value, 4)
+    ordered = {s: by_stage[s] for s in _STAGE_ORDER if s in by_stage}
+    # include any unexpected stages after the known ones, for forward-compatibility
+    for s in by_stage:
+        if s not in ordered:
+            ordered[s] = by_stage[s]
+    return ordered
 
 
 def _render_mermaid(mermaid_src: str) -> None:  # pragma: no cover - UI rendering
@@ -107,8 +134,29 @@ def main() -> None:  # pragma: no cover - UI entry point
             results = json.loads(results_path.read_text())
             rows = eval_rows(results)
             if rows:
+                st.subheader("Overall metrics")
                 st.bar_chart({r["metric"]: r["mean_score"] for r in rows})
                 st.table(rows)
+
+            stage_data = per_stage_chart_data(results)
+            if stage_data:
+                st.subheader("Per-stage retrieval quality")
+                st.caption(
+                    "context_precision / context_recall at each retrieval stage — "
+                    "watch recall hold through fusion and precision rise after rerank."
+                )
+                # rows = stages (pipeline order), columns = metrics → grouped bars
+                metrics = sorted({m for s in stage_data.values() for m in s})
+                chart = {
+                    m: [stage_data[s].get(m) for s in stage_data] for m in metrics
+                }
+                import pandas as pd
+
+                st.bar_chart(pd.DataFrame(chart, index=list(stage_data.keys())))
+                st.table(
+                    [{"stage": s, **vals} for s, vals in stage_data.items()]
+                )
+
             n = len(results.get("records", []))
             st.caption(f"From {n} evaluated item(s) in `{EVAL_RESULTS_PATH}`.")
             with st.expander("Per-item records"):
