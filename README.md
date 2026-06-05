@@ -52,6 +52,24 @@ uv run python -m ragpipe.ingest                             # fetch → chunk �
 uv run streamlit run app/dashboard.py     # Run / Evaluation / Architecture tabs
 ```
 
+## Serve the HTTP API
+
+The website's RAG demo talks to this service, not Streamlit. It reuses the same
+pipeline and the dashboard's pure helper functions.
+
+```bash
+uv run uvicorn app.api:app --host 0.0.0.0 --port 8000
+```
+
+- `POST /run` `{"query": "..."}` → answer, faithfulness, attempt, lowConfidence, and
+  per-stage chunk tables (`stages.{dense,bm25,fused,reranked}`).
+- `GET /eval` → RAGAS metrics from `eval_results.json` (`overall`, `perStage`, `nRecords`).
+- `GET /health` → `{"status":"ok"}`.
+
+Requires the same Azure env vars as the pipeline (see `.env.example`). The service is
+intended to sit behind the website's Spring backend, which owns rate-limiting and the
+daily budget cap — do not expose it publicly unguarded.
+
 ## Evaluate
 
 ```bash

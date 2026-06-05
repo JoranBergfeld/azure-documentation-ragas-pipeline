@@ -1,0 +1,26 @@
+# Keep the build context small and the image clean. The host .venv is the
+# wrong platform/arch and would shadow the one uv builds inside the image.
+.venv/
+__pycache__/
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# Local secrets / state — never bake into an image.
+.env
+.env.example
+
+# VCS + tooling
+.git/
+.github/
+.gitignore
+.superpowers/
+.claude/
+
+# Docs, tests and large local artifacts aren't needed at runtime.
+docs/
+tests/
+*.md
+eval_results.json
+data/testset.synthetic.jsonl
