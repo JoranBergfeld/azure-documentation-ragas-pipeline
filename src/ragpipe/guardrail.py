@@ -89,17 +89,21 @@ def _build_claude_faithfulness(settings) -> MetricFn:  # pragma: no cover - live
         # Rebuilt per scoring call: Entra bearer tokens expire (~1h) and
         # ChatAnthropic fixes headers at construction. azure-identity caches the
         # token, so this is cheap until a refresh is actually due.
-        judge = LangchainLLMWrapper(
-            ChatAnthropic(
-                model=settings.judge_model,
-                base_url=base_url,
-                api_key="unused-entra-bearer",  # real auth is the header below
-                default_headers={"Authorization": f"Bearer {token_provider()}"},
-                max_tokens=4096,
-                temperature=0,
-            )
+        judge_chat = ChatAnthropic(
+            model=settings.judge_model,
+            base_url=base_url,
+            api_key="placeholder",  # satisfies validation; nulled below
+            default_headers={"Authorization": f"Bearer {token_provider()}"},
+            max_tokens=4096,
+            temperature=0,
         )
-        return Faithfulness(llm=judge)
+        # The anthropic SDK sends X-Api-Key alongside any custom Authorization
+        # header; a gateway that validates X-Api-Key first would 401. Clearing
+        # the key on both underlying clients removes the header entirely
+        # (verified against anthropic 0.109.1: absent from built requests).
+        judge_chat._client.api_key = None
+        judge_chat._async_client.api_key = None
+        return Faithfulness(llm=LangchainLLMWrapper(judge_chat))
 
     async def metric_fn(*, question: str, answer: str, contexts: list[str]) -> float:
         sample = SingleTurnSample(
