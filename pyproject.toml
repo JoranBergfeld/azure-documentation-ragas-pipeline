@@ -18,6 +18,7 @@ dependencies = [
     "fastapi",
     "uvicorn[standard]",
     "rapidfuzz",
+    "markdownify>=1.2.2",
 ]
 
 [dependency-groups]
