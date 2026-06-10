@@ -124,30 +124,53 @@ def coverage(records: list[EvalRecord]) -> dict[str, tuple[int, int]]:
     }
 
 
-def _build_ragas_clients(settings):  # pragma: no cover - live Azure wiring
+def _build_ragas_clients(settings):
+    """(llm, embeddings) RAGAS wrappers: DeepSeek offline judge + OpenAI embeddings.
+
+    The offline judge is the third family (ADR-0009) — independent of both the
+    gpt generator and the Claude online gate, so offline scores are not
+    self-judged and not gate-saturated by the same model instance. DeepSeek is
+    sold directly by Azure and served on the OpenAI-compatible route of the
+    services.ai.azure.com host, so the AzureChatOpenAI client works unchanged.
+    Embeddings (answer_relevancy only) stay on text-embedding-3-small: they are
+    a measurement primitive, not a judge.
+    """
+    if not settings.offline_judge_model:
+        raise ValueError(
+            "OFFLINE_JUDGE_MODEL is required: offline RAGAS metrics are judged "
+            "by the DeepSeek deployment (ADR-0009); set it in .env"
+        )
+    return _build_ragas_clients_live(settings)
+
+
+def _build_ragas_clients_live(settings):  # pragma: no cover - live Azure wiring
     """Build the (llm, embeddings) RAGAS wrappers backed by Foundry models via Entra."""
     from azure.identity import DefaultAzureCredential, get_bearer_token_provider
     from langchain_openai import AzureChatOpenAI, AzureOpenAIEmbeddings
     from ragas.embeddings import LangchainEmbeddingsWrapper
     from ragas.llms import LangchainLLMWrapper
 
-    from ragpipe.embeddings import openai_endpoint_from_project
+    from ragpipe.embeddings import (
+        openai_endpoint_from_project,
+        services_endpoint_from_project,
+    )
 
     token_provider = get_bearer_token_provider(
         DefaultAzureCredential(), "https://cognitiveservices.azure.com/.default"
     )
-    endpoint = openai_endpoint_from_project(settings.foundry_project_endpoint)
+    # No explicit temperature: DeepSeek-V4-Pro is a reasoning model and, like
+    # other reasoning deployments on this route, may reject sampling overrides.
     llm = LangchainLLMWrapper(
         AzureChatOpenAI(
-            azure_endpoint=endpoint,
-            azure_deployment=settings.foundry_chat_model,
+            azure_endpoint=services_endpoint_from_project(settings.foundry_project_endpoint),
+            azure_deployment=settings.offline_judge_model,
             api_version="2024-10-21",
             azure_ad_token_provider=token_provider,
         )
     )
     emb = LangchainEmbeddingsWrapper(
         AzureOpenAIEmbeddings(
-            azure_endpoint=endpoint,
+            azure_endpoint=openai_endpoint_from_project(settings.foundry_project_endpoint),
             azure_deployment=settings.foundry_embedding_model,
             api_version="2024-10-21",
             azure_ad_token_provider=token_provider,

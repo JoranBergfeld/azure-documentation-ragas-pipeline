@@ -11,6 +11,19 @@ from ragpipe.eval.testset import TestItem
 from ragpipe.models import Chunk, PipelineState
 
 
+def test_offline_judge_requires_offline_judge_model():
+    from ragpipe.eval.harness import _build_ragas_clients
+
+    class _Settings:
+        foundry_project_endpoint = "https://acct.services.ai.azure.com/api/projects/p"
+        foundry_chat_model = "gpt-5.4"
+        foundry_embedding_model = "text-embedding-3-small"
+        offline_judge_model = None
+
+    with pytest.raises(ValueError, match="OFFLINE_JUDGE_MODEL"):
+        _build_ragas_clients(_Settings())
+
+
 def test_aggregate_means_per_metric():
     records = [
         EvalRecord(question="q1", answer="a1", contexts=["c"], ground_truth="g1",
