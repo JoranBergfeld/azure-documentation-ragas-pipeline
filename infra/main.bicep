@@ -24,6 +24,9 @@ param chatModelVersion string = '2026-03-05'
 @description('Judge model deployment name. claude-sonnet-4-6 (preview) is an Anthropic partner model: deployable only when the Foundry account is in swedencentral or eastus2, and the subscription needs Azure Marketplace access with pay-as-you-go billing (first-time deployments may require a one-time marketplace offer acceptance in the portal). Set to empty string to skip the deployment.')
 param judgeModel string = 'claude-sonnet-4-6'
 
+@description('Offline RAGAS judge deployment. DeepSeek-V4-Pro (preview) is sold directly by Azure: GlobalStandard in all regions (incl. swedencentral), served on the OpenAI-compatible route, Azure-direct licensing — no marketplace acceptance needed (unlike Claude). Third family besides the OpenAI generator and the Anthropic online gate (ADR-0009). Set to empty string to skip.')
+param offlineJudgeModel string = 'DeepSeek-V4-Pro'
+
 @description('Embedding model deployment name. Deployed as GlobalStandard: text-embedding-3-small has no regional-Standard availability in swedencentral (that limitation is what previously forced switzerlandnorth).')
 param embeddingModel string = 'text-embedding-3-small'
 
@@ -127,6 +130,20 @@ resource judge 'Microsoft.CognitiveServices/accounts/deployments@2025-04-01-prev
   }
 }
 
+// DeepSeek model (sold directly by Azure) for the OFFLINE RAGAS judge (ADR-0009):
+// a third family so offline scores are independent of both the generator (OpenAI)
+// and the online gate (Anthropic). Sequential dependsOn — same
+// one-deployment-at-a-time rule.
+resource offlineJudge 'Microsoft.CognitiveServices/accounts/deployments@2025-04-01-preview' = if (!empty(offlineJudgeModel)) {
+  parent: foundry
+  name: offlineJudgeModel
+  dependsOn: [judge]
+  sku: { name: 'GlobalStandard', capacity: 50 }
+  properties: {
+    model: { format: 'DeepSeek', name: offlineJudgeModel }
+  }
+}
+
 // --- Data-plane RBAC for the deploying principal -------------------------------
 // Control-plane Owner does NOT grant data-plane access. These assignments let the
 // principal call the embedding/chat deployments and read/write the Search index,
@@ -167,3 +184,4 @@ output SEARCH_ENDPOINT string = 'https://${search.name}.search.windows.net'
 output FOUNDRY_CHAT_MODEL string = chatModel
 output FOUNDRY_EMBEDDING_MODEL string = embeddingModel
 output JUDGE_MODEL string = judgeModel
+output OFFLINE_JUDGE_MODEL string = offlineJudgeModel
