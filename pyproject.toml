@@ -17,6 +17,7 @@ dependencies = [
     "beautifulsoup4",
     "fastapi",
     "uvicorn[standard]",
+    "rapidfuzz",
 ]
 
 [dependency-groups]
