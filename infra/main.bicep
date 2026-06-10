@@ -1,5 +1,7 @@
-@description('Primary location for all resources. Restricted to regions where gpt-4o (2024-11-20), text-embedding-3-small, and Azure AI Search (with semantic ranker) are all available on the Standard deployment type. Note: text-embedding-3-small is NOT available in most EU regions; switzerlandnorth is the only EU option.')
+@description('Primary location for all resources. Default swedencentral: one of only two regions (with eastus2) where Anthropic Claude models can be deployed, and where gpt-5.4 + text-embedding-3-small are available via GlobalStandard/DataZone deployments (NOT via regional Standard — hence the embedding deployment below uses GlobalStandard). switzerlandnorth remains valid for an OpenAI-only stack but cannot host the Claude judge model.')
 @allowed([
+  'swedencentral'
+  'eastus2'
   'switzerlandnorth'
   'westus'
   'japaneast'
@@ -7,17 +9,22 @@
   'uaenorth'
   'canadaeast'
   'eastus'
-  'eastus2'
 ])
-param location string = 'switzerlandnorth'
+param location string = 'swedencentral'
 
 @description('Base name for resources')
 param baseName string = 'ragpipe'
 
-@description('Chat model deployment name')
-param chatModel string = 'gpt-4o'
+@description('Chat model deployment name (generator; also the RAGAS judge until the judge-model split lands).')
+param chatModel string = 'gpt-5.4'
 
-@description('Embedding model deployment name. text-embedding-3-small must be deployed in one of the allowed regions above (it is not available in swedencentral).')
+@description('Chat model version. gpt-5.4 GA version is 2026-03-05.')
+param chatModelVersion string = '2026-03-05'
+
+@description('Judge model deployment name. claude-sonnet-4-6 (preview) is an Anthropic partner model: deployable only when the Foundry account is in swedencentral or eastus2, and the subscription needs Azure Marketplace access with pay-as-you-go billing (first-time deployments may require a one-time marketplace offer acceptance in the portal). Set to empty string to skip the deployment.')
+param judgeModel string = 'claude-sonnet-4-6'
+
+@description('Embedding model deployment name. Deployed as GlobalStandard: text-embedding-3-small has no regional-Standard availability in swedencentral (that limitation is what previously forced switzerlandnorth).')
 param embeddingModel string = 'text-embedding-3-small'
 
 @description('Object (principal) ID to grant data-plane access to the Foundry models and the Search index. With azd this is auto-populated from AZURE_PRINCIPAL_ID (the deploying user or CI service principal). Leave empty to skip role assignments (e.g. when assigning them out of band).')
@@ -87,21 +94,36 @@ resource chat 'Microsoft.CognitiveServices/accounts/deployments@2025-04-01-previ
   name: chatModel
   sku: { name: 'GlobalStandard', capacity: 100 }
   properties: {
-    model: { format: 'OpenAI', name: chatModel, version: '2024-11-20' }
+    model: { format: 'OpenAI', name: chatModel, version: chatModelVersion }
   }
 }
 
 // capacity sets the deployment's rate limit (≈ capacity req/10s and capacity*1000
 // tokens/min). The default of 10 is far too low for bulk corpus ingestion (every
-// worker thrashes on 429s); 120 lets ~580 pages ingest in minutes. Standard
-// deployments bill per token consumed, not per capacity, so this is free headroom.
+// worker thrashes on 429s); 120 lets ~580 pages ingest in minutes. GlobalStandard
+// (required for 3-small in swedencentral) bills per token consumed, not per
+// capacity, so this is free headroom.
 resource embedding 'Microsoft.CognitiveServices/accounts/deployments@2025-04-01-preview' = {
   parent: foundry
   name: embeddingModel
   dependsOn: [chat]
-  sku: { name: 'Standard', capacity: 120 }
+  sku: { name: 'GlobalStandard', capacity: 120 }
   properties: {
     model: { format: 'OpenAI', name: embeddingModel }
+  }
+}
+
+// Anthropic partner model for the RAGAS judge (deployed now, wired up in the
+// judge-independence change). Claude models support only GlobalStandard and are
+// marketplace-billed; version is omitted so Azure assigns the current default.
+// Deployments on one account must be created sequentially — hence dependsOn.
+resource judge 'Microsoft.CognitiveServices/accounts/deployments@2025-04-01-preview' = if (!empty(judgeModel)) {
+  parent: foundry
+  name: judgeModel
+  dependsOn: [embedding]
+  sku: { name: 'GlobalStandard', capacity: 50 }
+  properties: {
+    model: { format: 'Anthropic', name: judgeModel }
   }
 }
 
@@ -144,3 +166,4 @@ output FOUNDRY_PROJECT_ENDPOINT string = 'https://${foundry.name}.services.ai.az
 output SEARCH_ENDPOINT string = 'https://${search.name}.search.windows.net'
 output FOUNDRY_CHAT_MODEL string = chatModel
 output FOUNDRY_EMBEDDING_MODEL string = embeddingModel
+output JUDGE_MODEL string = judgeModel

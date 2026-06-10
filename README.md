@@ -93,17 +93,20 @@ Set `TESTSET_MODE=synthetic` in `.env` to generate the test set from the corpus 
 uv run pytest -q
 ```
 
-## Supported regions
+## Supported regions & models
 
-Provisioning is restricted (in `infra/main.bicep`) to regions where `gpt-4o`,
-`text-embedding-3-small`, and Azure AI Search (with semantic ranker) are all
-available on the Standard deployment type: **switzerlandnorth** (default), westus,
-japaneast, australiaeast, uaenorth, canadaeast, eastus, eastus2. (The US regions
-eastus/eastus2 are frequently capacity-constrained for Foundry; switzerlandnorth
-is the default to avoid that and keep EU data residency.)
+Default region is **swedencentral** (see `docs/adr/0008`): it is one of only two
+regions (with `eastus2`) where Anthropic Claude models deploy in Microsoft Foundry,
+and `gpt-5.4` + `text-embedding-3-small` are available there via
+GlobalStandard/DataZone deployments. The Bicep deploys:
 
-`text-embedding-3-small` is not offered in most EU regions — `switzerlandnorth` is
-the only EU option here. If you need another EU region, switch
-`FOUNDRY_EMBEDDING_MODEL` (and the Bicep `embeddingModel` default) to
-`text-embedding-3-large`, which is available in `swedencentral`, `francecentral`,
-`norwayeast`, `uksouth`, and more.
+- `gpt-5.4` (2026-03-05, GlobalStandard) — generator agent + current RAGAS judge
+- `text-embedding-3-small` (GlobalStandard — regional Standard is NOT offered in
+  swedencentral; that limitation is what previously forced switzerlandnorth)
+- `claude-sonnet-4-6` (preview, GlobalStandard, marketplace-billed) — provisioned
+  for the upcoming judge-model split; requires Azure Marketplace access on a
+  pay-as-you-go subscription, and the first deployment may need a one-time
+  marketplace offer acceptance in the portal
+
+Other allowed regions (`infra/main.bicep` `@allowed`) work for the OpenAI-only
+stack, but Claude deploys only from swedencentral/eastus2.
