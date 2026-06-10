@@ -13,7 +13,10 @@ retrieval (dense + BM25) → RRF fusion → Azure semantic rerank → Foundry ge
 agent, with a RAGAS faithfulness guardrail that retries on weak grounding;
 **③ Evaluation** replays the pipeline over a tagged test set and scores it with
 deterministic per-stage retrieval metrics (hit rate / MRR) plus the RAGAS suite,
-comparing against a frozen baseline. (Source: [`docs/pipeline.svg`](docs/pipeline.svg); the live
+comparing against a frozen baseline.
+
+Per-phase deep dives: [① Ingest](docs/pipeline-ingest.svg) ·
+[② Query pipeline](docs/pipeline-query.svg) · [③ Evaluation](docs/pipeline-eval.svg). (Source: [`docs/pipeline.svg`](docs/pipeline.svg); the live
 runtime workflow graph is also rendered in the dashboard's Architecture tab from
 [`docs/pipeline.mmd`](docs/pipeline.mmd).) See the design spec in `docs/superpowers/specs/`.
 

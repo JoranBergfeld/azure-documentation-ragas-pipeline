@@ -1,0 +1,109 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1180 640" font-family="-apple-system, Segoe UI, Helvetica, Arial, sans-serif">
+  <defs>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="userSpaceOnUse">
+      <path d="M0,0 L8,3 L0,6 Z" fill="#6B7A88"/>
+    </marker>
+    <marker id="arrowTeal" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="userSpaceOnUse">
+      <path d="M0,0 L8,3 L0,6 Z" fill="#2E9E4B"/>
+    </marker>
+  </defs>
+  <rect x="0" y="0" width="1180" height="640" rx="14" fill="#FFFFFF"/>
+
+  <text x="32" y="34" font-size="22" font-weight="700" fill="#1B2733">② Query pipeline — in detail</text>
+  <text x="32" y="52" font-size="13" fill="#5B6B7B">run_pipeline(query, deps) — every stage traced into PipelineState (POST /run · dashboard Run tab)</text>
+
+  <!-- ===== Stage 1: hybrid retrieval ===== -->
+  <rect x="24" y="66" width="1132" height="180" rx="12" fill="#F5F8FB" stroke="#D6E4F0"/>
+  <text x="40" y="88" font-size="13" font-weight="700" fill="#5B6B7B">1 · Hybrid retrieval — two legs over the same index</text>
+  <g>
+    <rect x="40" y="130" width="110" height="52" rx="8" fill="#EEF2F6" stroke="#9AA8B5" stroke-width="1.5"/>
+    <text x="95" y="160" text-anchor="middle" font-size="13" font-weight="600" fill="#1B2733">Question</text>
+  </g>
+  <g>
+    <rect x="190" y="102" width="190" height="52" rx="8" fill="#E3F0FB" stroke="#0078D4" stroke-width="1.5"/>
+    <text x="285" y="123" text-anchor="middle" font-size="12.5" font-weight="600" fill="#1B2733">embed query</text>
+    <text x="285" y="138" text-anchor="middle" font-size="10.5" fill="#5B6B7B">text-embedding-3-small</text>
+  </g>
+  <g>
+    <rect x="420" y="102" width="230" height="52" rx="8" fill="#E3F0FB" stroke="#5AA0DC" stroke-width="1.5"/>
+    <text x="535" y="123" text-anchor="middle" font-size="12.5" font-weight="600" fill="#1B2733">DenseRetriever</text>
+    <text x="535" y="138" text-anchor="middle" font-size="10.5" fill="#5B6B7B">VectorizedQuery · HNSW cosine · top 5</text>
+  </g>
+  <g>
+    <rect x="420" y="176" width="230" height="52" rx="8" fill="#E3F0FB" stroke="#5AA0DC" stroke-width="1.5"/>
+    <text x="535" y="197" text-anchor="middle" font-size="12.5" font-weight="600" fill="#1B2733">BM25Retriever</text>
+    <text x="535" y="212" text-anchor="middle" font-size="10.5" fill="#5B6B7B">full-text keyword · top 5</text>
+  </g>
+  <g>
+    <rect x="700" y="138" width="180" height="52" rx="8" fill="#EEF2F6" stroke="#9AA8B5" stroke-width="1.5"/>
+    <text x="790" y="159" text-anchor="middle" font-size="12.5" font-weight="600" fill="#1B2733">RRF fusion</text>
+    <text x="790" y="174" text-anchor="middle" font-size="10.5" fill="#5B6B7B">score = Σ 1/(60 + rank) · ≤10 ids</text>
+  </g>
+  <g>
+    <rect x="920" y="138" width="236" height="52" rx="8" fill="#E3F0FB" stroke="#0078D4" stroke-width="1.5"/>
+    <text x="1038" y="159" text-anchor="middle" font-size="12.5" font-weight="600" fill="#1B2733">SemanticReranker</text>
+    <text x="1038" y="174" text-anchor="middle" font-size="10.5" fill="#5B6B7B">search.in(id) filter · rerankerScore · top 5</text>
+  </g>
+  <path d="M150,142 L186,130" stroke="#6B7A88" stroke-width="1.6" fill="none" marker-end="url(#arrow)"/>
+  <path d="M150,170 L416,200" stroke="#6B7A88" stroke-width="1.6" fill="none" marker-end="url(#arrow)"/>
+  <path d="M380,128 L416,128" stroke="#6B7A88" stroke-width="1.6" fill="none" marker-end="url(#arrow)"/>
+  <path d="M650,128 L696,152" stroke="#6B7A88" stroke-width="1.6" fill="none" marker-end="url(#arrow)"/>
+  <path d="M650,202 L696,176" stroke="#6B7A88" stroke-width="1.6" fill="none" marker-end="url(#arrow)"/>
+  <path d="M880,164 L916,164" stroke="#6B7A88" stroke-width="1.6" fill="none" marker-end="url(#arrow)"/>
+  <text x="700" y="218" font-size="10.5" fill="#5B6B7B">chunks selected as id · title · url · content — the context field stays in the index (ADR-0003)</text>
+
+  <!-- ===== Stage 2: grounded generation ===== -->
+  <rect x="24" y="262" width="1132" height="130" rx="12" fill="#F5F8FB" stroke="#D6E4F0"/>
+  <text x="40" y="284" font-size="13" font-weight="700" fill="#5B6B7B">2 · Grounded generation</text>
+  <g>
+    <rect x="40" y="300" width="320" height="52" rx="8" fill="#EEF2F6" stroke="#9AA8B5" stroke-width="1.5"/>
+    <text x="200" y="321" text-anchor="middle" font-size="12.5" font-weight="600" fill="#1B2733">build_grounding_prompt</text>
+    <text x="200" y="336" text-anchor="middle" font-size="10.5" fill="#5B6B7B">sources [n](url) · ONLY the sources · say you don't know</text>
+  </g>
+  <g>
+    <rect x="420" y="300" width="260" height="52" rx="8" fill="#F0EAFA" stroke="#8661C5" stroke-width="1.5"/>
+    <text x="550" y="321" text-anchor="middle" font-size="12.5" font-weight="600" fill="#1B2733">Foundry generator agent</text>
+    <text x="550" y="336" text-anchor="middle" font-size="10.5" fill="#5B6B7B">gpt-5.4 · registered version "1" · + Code Interpreter</text>
+  </g>
+  <g>
+    <rect x="740" y="300" width="180" height="52" rx="8" fill="#EEF2F6" stroke="#9AA8B5" stroke-width="1.5"/>
+    <text x="830" y="321" text-anchor="middle" font-size="12.5" font-weight="600" fill="#1B2733">draft answer</text>
+    <text x="830" y="336" text-anchor="middle" font-size="10.5" fill="#5B6B7B">inline [n] citations</text>
+  </g>
+  <path d="M360,326 L416,326" stroke="#6B7A88" stroke-width="1.6" fill="none" marker-end="url(#arrow)"/>
+  <path d="M680,326 L736,326" stroke="#6B7A88" stroke-width="1.6" fill="none" marker-end="url(#arrow)"/>
+  <text x="950" y="330" font-size="10.5" fill="#5B6B7B">prompt contains clean chunk text only</text>
+
+  <!-- ===== Stage 3: guardrail loop ===== -->
+  <rect x="24" y="408" width="1132" height="212" rx="12" fill="#F3FAF4" stroke="#CDE9D2"/>
+  <text x="40" y="430" font-size="13" font-weight="700" fill="#5B6B7B">3 · Faithfulness guardrail loop — decide_next(score, θ=0.7, attempt, max_retries=2)</text>
+  <g>
+    <rect x="40" y="450" width="320" height="52" rx="8" fill="#E5F5E9" stroke="#2E9E4B" stroke-width="1.5"/>
+    <text x="200" y="471" text-anchor="middle" font-size="12.5" font-weight="600" fill="#1B2733">RAGAS Faithfulness</text>
+    <text x="200" y="486" text-anchor="middle" font-size="10.5" fill="#5B6B7B">extract claims → verify each against retrieved contexts (LLM judge)</text>
+  </g>
+  <g>
+    <rect x="420" y="450" width="260" height="52" rx="8" fill="#EEF2F6" stroke="#9AA8B5" stroke-width="1.5"/>
+    <text x="550" y="471" text-anchor="middle" font-size="12.5" font-weight="600" fill="#1B2733">decide_next</text>
+    <text x="550" y="486" text-anchor="middle" font-size="10.5" fill="#5B6B7B">judge error → score None · fail-closed (never PASS)</text>
+  </g>
+  <g>
+    <rect x="920" y="436" width="236" height="44" rx="8" fill="#E5F5E9" stroke="#107C10" stroke-width="1.5"/>
+    <text x="1038" y="455" text-anchor="middle" font-size="12.5" font-weight="600" fill="#1B2733">Answer</text>
+    <text x="1038" y="470" text-anchor="middle" font-size="10.5" fill="#5B6B7B">faithfulness score attached</text>
+  </g>
+  <g>
+    <rect x="920" y="496" width="236" height="44" rx="8" fill="#FDF2F2" stroke="#C56666" stroke-width="1.5"/>
+    <text x="1038" y="515" text-anchor="middle" font-size="12.5" font-weight="600" fill="#1B2733">Answer · low_confidence</text>
+    <text x="1038" y="530" text-anchor="middle" font-size="10.5" fill="#5B6B7B">retries exhausted — flagged, still returned</text>
+  </g>
+  <path d="M360,476 L416,476" stroke="#6B7A88" stroke-width="1.6" fill="none" marker-end="url(#arrow)"/>
+  <path d="M680,464 L916,452" stroke="#2E9E4B" stroke-width="1.6" fill="none" marker-end="url(#arrowTeal)"/>
+  <text x="730" y="448" font-size="11" font-weight="600" fill="#2E9E4B">PASS — score ≥ 0.7</text>
+  <path d="M680,488 L916,512" stroke="#C56666" stroke-width="1.6" fill="none" marker-end="url(#arrow)"/>
+  <text x="730" y="520" font-size="11" font-weight="600" fill="#C56666">EXHAUSTED — attempt ≥ 2</text>
+  <!-- retry loop back to generation -->
+  <path d="M550,502 L550,570 L30,570 L30,400 L150,356" stroke="#2E9E4B" stroke-width="1.6" stroke-dasharray="6 4" fill="none" marker-end="url(#arrowTeal)"/>
+  <text x="180" y="564" font-size="11" font-weight="600" fill="#2E9E4B">RETRY — score &lt; 0.7 or NaN/None · regenerates with the SAME contexts (attempt + 1)</text>
+  <text x="40" y="600" font-size="10.5" fill="#5B6B7B">known quirks (next specs): refusal answers yield NaN → retried + flagged despite being honest; retry re-rolls generation only — no query rewrite, no judge feedback; judge = chat model (judge split → claude-sonnet-4-6 upcoming)</text>
+</svg>
