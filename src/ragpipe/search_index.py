@@ -29,6 +29,10 @@ def build_index(name: str, vector_dimensions: int) -> SearchIndex:
         SimpleField(name="url", type=SearchFieldDataType.String, filterable=True),
         SimpleField(name="chunk_id", type=SearchFieldDataType.Int32),
         SearchableField(name="content", type=SearchFieldDataType.String),
+        # Retrieval-only decoration: breadcrumb + generated situating context
+        # (ADR-0003). Searchable for BM25 and in the semantic config, but never
+        # returned into generator prompts or the faithfulness judge.
+        SearchableField(name="context", type=SearchFieldDataType.String),
         SearchField(
             name="content_vector",
             type=SearchFieldDataType.Collection(SearchFieldDataType.Single),
@@ -51,7 +55,10 @@ def build_index(name: str, vector_dimensions: int) -> SearchIndex:
                 name=SEMANTIC_CONFIG_NAME,
                 prioritized_fields=SemanticPrioritizedFields(
                     title_field=SemanticField(field_name="title"),
-                    content_fields=[SemanticField(field_name="content")],
+                    content_fields=[
+                        SemanticField(field_name="content"),
+                        SemanticField(field_name="context"),
+                    ],
                 ),
             )
         ]
