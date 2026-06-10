@@ -12,6 +12,9 @@ class TestItem:
     question: str
     ground_truth: str
     ground_truth_context: str
+    # Optional difficulty/category tags (ADR-0006): 'original', 'paraphrase',
+    # 'lookalike', 'synthetic'. Empty means 'original'.
+    tags: tuple[str, ...] = ()
 
 
 def _load_jsonl(path: str) -> list[TestItem]:
@@ -27,6 +30,7 @@ def _load_jsonl(path: str) -> list[TestItem]:
                     question=row["question"],
                     ground_truth=row["ground_truth"],
                     ground_truth_context=row["ground_truth_context"],
+                    tags=tuple(row.get("tags", ())),
                 )
             )
     return items
