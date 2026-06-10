@@ -24,12 +24,20 @@ def normalize_url(url: str) -> str:
 
 
 def hit_rate(urls: list[str], ground_truth_url: str) -> float:
-    """1.0 if the ground-truth URL appears anywhere in the list, else 0.0."""
+    """1.0 if the ground-truth URL appears anywhere in the list, else 0.0.
+
+    URLs are compared verbatim — pass both sides through normalize_url first
+    (stage_retrieval_metrics does this for you).
+    """
     return 1.0 if ground_truth_url in urls else 0.0
 
 
 def mrr(urls: list[str], ground_truth_url: str) -> float:
-    """Reciprocal rank (1-based) of the first matching URL; 0.0 if absent."""
+    """Reciprocal rank (1-based) of the first matching URL; 0.0 if absent.
+
+    URLs are compared verbatim — pass both sides through normalize_url first
+    (stage_retrieval_metrics does this for you).
+    """
     for i, url in enumerate(urls):
         if url == ground_truth_url:
             return 1.0 / (i + 1)
