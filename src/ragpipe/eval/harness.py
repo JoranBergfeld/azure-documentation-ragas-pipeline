@@ -5,6 +5,7 @@ from dataclasses import dataclass, field
 from statistics import mean
 from typing import Awaitable, Callable
 
+from ragpipe.eval.retrieval_metrics import stage_retrieval_metrics
 from ragpipe.eval.testset import TestItem
 from ragpipe.models import PipelineState
 
@@ -25,6 +26,11 @@ class EvalRecord:
     # Per-stage context text captured during the run (always populated, cheap).
     # Only *evaluated* when the per-stage sweep is enabled.
     stage_contexts: dict[str, list[str]] = field(default_factory=dict)
+    # Per-stage page URLs captured during the run, for deterministic URL-match
+    # metrics (ADR-0002).
+    stage_urls: dict[str, list[str]] = field(default_factory=dict)
+    # Test-item tags (ADR-0006); empty means 'original'.
+    tags: tuple[str, ...] = ()
 
 
 PipelineFn = Callable[[str], Awaitable[PipelineState]]
@@ -52,20 +58,26 @@ async def run_harness(
     records: list[EvalRecord] = []
     for item in items:
         state = await pipeline_fn(item.question)
-        records.append(
-            EvalRecord(
-                question=item.question,
-                answer=state.answer,
-                contexts=[c.content for c in state.reranked],
-                ground_truth=item.ground_truth,
-                stage_contexts={
-                    "dense": [c.content for c in state.dense],
-                    "bm25": [c.content for c in state.bm25],
-                    "fused": [c.content for c in state.fused],
-                    "reranked": [c.content for c in state.reranked],
-                },
-            )
+        by_stage = {
+            "dense": state.dense,
+            "bm25": state.bm25,
+            "fused": state.fused,
+            "reranked": state.reranked,
+        }
+        record = EvalRecord(
+            question=item.question,
+            answer=state.answer,
+            contexts=[c.content for c in state.reranked],
+            ground_truth=item.ground_truth,
+            stage_contexts={s: [c.content for c in cs] for s, cs in by_stage.items()},
+            stage_urls={s: [c.url for c in cs] for s, cs in by_stage.items()},
+            tags=item.tags,
         )
+        # Deterministic metrics are free — always computed, no toggle.
+        record.metrics.update(
+            stage_retrieval_metrics(record.stage_urls, item.ground_truth_context)
+        )
+        records.append(record)
     return await evaluator_fn(records)
 
 
@@ -89,6 +101,18 @@ def aggregate(records: list[EvalRecord]) -> dict[str, float]:
         if valid:
             means[k] = mean(valid)
     return means
+
+
+def aggregate_by_tag(records: list[EvalRecord]) -> dict[str, dict[str, float]]:
+    """aggregate() per tag group; records without tags count as 'original'.
+
+    A record with several tags contributes to each of its groups.
+    """
+    groups: dict[str, list[EvalRecord]] = {}
+    for r in records:
+        for tag in r.tags or ("original",):
+            groups.setdefault(tag, []).append(r)
+    return {tag: aggregate(rs) for tag, rs in sorted(groups.items())}
 
 
 def coverage(records: list[EvalRecord]) -> dict[str, tuple[int, int]]:
