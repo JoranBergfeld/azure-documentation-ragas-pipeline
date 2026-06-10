@@ -137,7 +137,13 @@ resource judge 'Microsoft.CognitiveServices/accounts/deployments@2025-04-01-prev
 resource offlineJudge 'Microsoft.CognitiveServices/accounts/deployments@2025-04-01-preview' = if (!empty(offlineJudgeModel)) {
   parent: foundry
   name: offlineJudgeModel
-  dependsOn: [judge]
+  // Sequential one-deployment-at-a-time chain that survives judgeModel='' —
+  // a dependsOn entry naming a skipped conditional resource produces a
+  // malformed (empty-name) resource ID at ARM validation time.
+  dependsOn: empty(judgeModel) ? [embedding] : [judge]
+  // 50 matches the online judge: the offline RAGAS sweep runs many concurrent
+  // judge calls, but per-item scoring is bounded by the harness's sequential
+  // replay, so chat-level (100) headroom isn't needed.
   sku: { name: 'GlobalStandard', capacity: 50 }
   properties: {
     model: { format: 'DeepSeek', name: offlineJudgeModel }
