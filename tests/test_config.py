@@ -26,3 +26,56 @@ def test_settings_missing_required_raises(monkeypatch):
     monkeypatch.delenv("FOUNDRY_PROJECT_ENDPOINT", raising=False)
     with pytest.raises(ValueError, match="FOUNDRY_PROJECT_ENDPOINT"):
         Settings.from_env(load=False)
+
+
+def _base_env(monkeypatch):
+    for k, v in {
+        "FOUNDRY_PROJECT_ENDPOINT": "https://acct.services.ai.azure.com/api/projects/p",
+        "FOUNDRY_CHAT_MODEL": "gpt-5.4",
+        "FOUNDRY_EMBEDDING_MODEL": "text-embedding-3-small",
+        "SEARCH_ENDPOINT": "https://s.search.windows.net",
+        "SEARCH_INDEX": "idx",
+        "GENERATOR_AGENT_NAME": "gen",
+    }.items():
+        monkeypatch.setenv(k, v)
+    # Isolate test env to ensure defaults are tested, not real environment values
+    monkeypatch.delenv("FAITHFULNESS_THRESHOLD", raising=False)
+    monkeypatch.delenv("TOP_K", raising=False)
+    monkeypatch.delenv("CANDIDATE_POOL", raising=False)
+    monkeypatch.delenv("MAX_RETRIES", raising=False)
+    monkeypatch.delenv("JUDGE_MODEL", raising=False)
+    monkeypatch.delenv("OFFLINE_JUDGE_MODEL", raising=False)
+
+
+def test_judge_models_parsed_from_env(monkeypatch):
+    _base_env(monkeypatch)
+    monkeypatch.setenv("JUDGE_MODEL", "claude-sonnet-4-6")
+    monkeypatch.setenv("OFFLINE_JUDGE_MODEL", "DeepSeek-V4-Pro")
+    monkeypatch.setenv("CANDIDATE_POOL", "20")
+    s = Settings.from_env(load=False)
+    assert s.judge_model == "claude-sonnet-4-6"
+    assert s.offline_judge_model == "DeepSeek-V4-Pro"
+    assert s.candidate_pool == 20
+
+
+def test_judge_models_default_to_none(monkeypatch):
+    _base_env(monkeypatch)
+    s = Settings.from_env(load=False)
+    assert s.judge_model is None
+    assert s.offline_judge_model is None
+    assert s.candidate_pool == 15
+
+
+def test_threshold_out_of_range_rejected(monkeypatch):
+    _base_env(monkeypatch)
+    monkeypatch.setenv("FAITHFULNESS_THRESHOLD", "7")  # typo for 0.7
+    with pytest.raises(ValueError, match="FAITHFULNESS_THRESHOLD"):
+        Settings.from_env(load=False)
+
+
+def test_candidate_pool_smaller_than_top_k_rejected(monkeypatch):
+    _base_env(monkeypatch)
+    monkeypatch.setenv("CANDIDATE_POOL", "3")
+    monkeypatch.setenv("TOP_K", "5")
+    with pytest.raises(ValueError, match="CANDIDATE_POOL"):
+        Settings.from_env(load=False)

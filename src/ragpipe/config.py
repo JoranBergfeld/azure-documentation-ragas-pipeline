@@ -36,6 +36,29 @@ class Settings:
     # When true, the offline eval also scores context_precision/recall at each
     # retrieval stage (dense/bm25/fused/reranked) — a heavier per-stage sweep.
     per_stage_metrics: bool = False
+    # Judge-model split (ADR-0009): the online faithfulness gate is judged by the
+    # Anthropic deployment, the offline RAGAS suite by the DeepSeek deployment —
+    # neither shares a family with the gpt generator. None = unset; the builders
+    # that need them raise rather than silently falling back to the generator.
+    judge_model: str | None = None
+    offline_judge_model: str | None = None
+    # Candidate pool per retrieval leg (dense/bm25) before RRF fusion. Wider than
+    # top_k so guardrail retries can widen the rerank window over real candidates.
+    candidate_pool: int = 15
+
+    def __post_init__(self) -> None:
+        if not (0.0 <= self.faithfulness_threshold <= 1.0):
+            raise ValueError(
+                f"FAITHFULNESS_THRESHOLD must be in [0, 1], got {self.faithfulness_threshold}"
+            )
+        if self.max_retries < 0:
+            raise ValueError(f"MAX_RETRIES must be >= 0, got {self.max_retries}")
+        if self.top_k < 1:
+            raise ValueError(f"TOP_K must be >= 1, got {self.top_k}")
+        if self.candidate_pool < self.top_k:
+            raise ValueError(
+                f"CANDIDATE_POOL ({self.candidate_pool}) must be >= TOP_K ({self.top_k})"
+            )
 
     @classmethod
     def from_env(cls, *, load: bool = True) -> "Settings":
@@ -56,4 +79,7 @@ class Settings:
             testset_mode=TestsetMode(os.environ.get("TESTSET_MODE", "handauthored")),
             per_stage_metrics=os.environ.get("PER_STAGE_METRICS", "").lower()
             in ("1", "true", "yes"),
+            judge_model=os.environ.get("JUDGE_MODEL") or None,
+            offline_judge_model=os.environ.get("OFFLINE_JUDGE_MODEL") or None,
+            candidate_pool=int(os.environ.get("CANDIDATE_POOL", "15")),
         )
