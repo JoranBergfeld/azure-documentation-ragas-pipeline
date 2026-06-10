@@ -53,36 +53,59 @@ def _ensure_ragas_importable() -> None:  # pragma: no cover
     sys.modules["langchain_community.chat_models.vertexai"] = placeholder
 
 
-def build_ragas_faithfulness(settings) -> MetricFn:  # pragma: no cover
-    """Build a faithfulness metric callable backed by Foundry models via RAGAS."""
+def build_ragas_faithfulness(settings) -> MetricFn:
+    """Faithfulness gate judged by the Claude deployment (ADR-0009).
+
+    The gate decides what users see, so it must not share a family with the
+    generator: a judge from the generator's own family is systematically
+    lenient on its own outputs (self-preference bias). Raises if JUDGE_MODEL
+    is unset — silently falling back to the generator would recreate the
+    circular setup this replaces.
+    """
+    if not settings.judge_model:
+        raise ValueError(
+            "JUDGE_MODEL is required: the faithfulness gate is judged by the "
+            "Claude deployment (ADR-0009); set it in .env"
+        )
+    return _build_claude_faithfulness(settings)
+
+
+def _build_claude_faithfulness(settings) -> MetricFn:  # pragma: no cover - live wiring
     _ensure_ragas_importable()
 
     from azure.identity import DefaultAzureCredential, get_bearer_token_provider
-    from langchain_openai import AzureChatOpenAI
+    from langchain_anthropic import ChatAnthropic
     from ragas.dataset_schema import SingleTurnSample
     from ragas.llms import LangchainLLMWrapper
     from ragas.metrics import Faithfulness
 
-    from ragpipe.embeddings import openai_endpoint_from_project
+    from ragpipe.embeddings import anthropic_endpoint_from_project
+    from ragpipe.foundry_claude import AI_FOUNDRY_SCOPE
 
-    token_provider = get_bearer_token_provider(
-        DefaultAzureCredential(), "https://cognitiveservices.azure.com/.default"
-    )
-    judge = LangchainLLMWrapper(
-        AzureChatOpenAI(
-            azure_endpoint=openai_endpoint_from_project(settings.foundry_project_endpoint),
-            azure_deployment=settings.foundry_chat_model,
-            api_version="2024-10-21",
-            azure_ad_token_provider=token_provider,
+    token_provider = get_bearer_token_provider(DefaultAzureCredential(), AI_FOUNDRY_SCOPE)
+    base_url = anthropic_endpoint_from_project(settings.foundry_project_endpoint)
+
+    def _metric() -> Faithfulness:
+        # Rebuilt per scoring call: Entra bearer tokens expire (~1h) and
+        # ChatAnthropic fixes headers at construction. azure-identity caches the
+        # token, so this is cheap until a refresh is actually due.
+        judge = LangchainLLMWrapper(
+            ChatAnthropic(
+                model=settings.judge_model,
+                base_url=base_url,
+                api_key="unused-entra-bearer",  # real auth is the header below
+                default_headers={"Authorization": f"Bearer {token_provider()}"},
+                max_tokens=4096,
+                temperature=0,
+            )
         )
-    )
-    metric = Faithfulness(llm=judge)
+        return Faithfulness(llm=judge)
 
     async def metric_fn(*, question: str, answer: str, contexts: list[str]) -> float:
         sample = SingleTurnSample(
             user_input=question, response=answer, retrieved_contexts=contexts
         )
-        return float(await metric.single_turn_ascore(sample))
+        return float(await _metric().single_turn_ascore(sample))
 
     return metric_fn
 
