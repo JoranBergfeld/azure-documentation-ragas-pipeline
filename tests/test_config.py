@@ -4,12 +4,11 @@ from ragpipe.config import Settings, TestsetMode
 
 
 def test_settings_loads_from_env(monkeypatch):
+    _base_env(monkeypatch)
+    # Override base env with specific values for this test
     monkeypatch.setenv("FOUNDRY_PROJECT_ENDPOINT", "https://proj.services.ai.azure.com")
     monkeypatch.setenv("FOUNDRY_CHAT_MODEL", "gpt-4o")
-    monkeypatch.setenv("FOUNDRY_EMBEDDING_MODEL", "text-embedding-3-small")
-    monkeypatch.setenv("SEARCH_ENDPOINT", "https://s.search.windows.net")
     monkeypatch.setenv("SEARCH_INDEX", "ms-docs")
-    monkeypatch.setenv("GENERATOR_AGENT_NAME", "ragpipe-generator")
 
     s = Settings.from_env()
 
