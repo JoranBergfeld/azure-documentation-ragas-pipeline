@@ -9,3 +9,5 @@ infra/main.json
 data/testset.synthetic.jsonl
 
 .claude/scheduled_tasks.lock
+.context_cache.json
+.context_cache.tmp
