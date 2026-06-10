@@ -162,6 +162,9 @@ degrade. If decoration shows no gain on the hard subsets, ADR-0001 is revisited
 
 ### 10. ADRs (`docs/adr/`)
 
+Written up front (committed with this spec) so the decision log exists before
+implementation:
+
 - `README.md` — convention: Nygard format (Context / Decision / Consequences) plus a
   mandatory **Sources** section; sequential numbering.
 - `0001-contextual-chunk-decoration.md` — per-chunk contextual retrieval over SAC and
@@ -171,6 +174,14 @@ degrade. If decoration shows no gain on the hard subsets, ADR-0001 is revisited
 - `0003-decoration-isolated-from-generator-context.md` — decorations are visible to
   retrieval (BM25, embeddings, semantic ranker) but not to the generator or the
   faithfulness judge.
+- `0004-heading-aware-fixed-size-chunking.md` — heading-aware + fixed-size chunking
+  over semantic chunking; markdown-preserving extraction.
+- `0005-deterministic-controls-around-context-generation.md` — content-addressed
+  cache, temperature=0, prompt-versioned keys, breadcrumb fallback floor.
+- `0006-baseline-before-treatment-evaluation.md` — tagged test subsets and the
+  baseline-first measurement protocol with pre-registered success criteria.
+- `0007-in-place-index-updates-with-prune.md` — backfilled: in-place index updates +
+  stale-document pruning, forced by the Foundry knowledge-source binding.
 
 ## Rejected alternatives
 
