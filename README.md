@@ -5,11 +5,15 @@ Agent Framework + Azure AI Foundry + Azure AI Search, evaluated with RAGAS.
 
 ![RAGAS-infused RAG pipeline — architecture](docs/pipeline.svg)
 
-The whole flow: **① Ingest** crawls Microsoft Learn and builds the Azure AI Search
-index; **② Query pipeline** runs hybrid retrieval (dense + BM25) → RRF fusion →
-Azure semantic rerank → Foundry generator agent, with a RAGAS faithfulness guardrail
-that retries on weak grounding; **③ Evaluation** replays the pipeline over a test set
-and scores it with RAGAS. (Source: [`docs/pipeline.svg`](docs/pipeline.svg); the live
+The whole flow: **① Ingest** crawls Microsoft Learn, extracts main content as
+markdown (code/tables preserved), splits on headings, decorates every chunk with a
+breadcrumb + cached LLM situating context (visible to retrieval only — see
+`docs/adr/`), and indexes it in Azure AI Search; **② Query pipeline** runs hybrid
+retrieval (dense + BM25) → RRF fusion → Azure semantic rerank → Foundry generator
+agent, with a RAGAS faithfulness guardrail that retries on weak grounding;
+**③ Evaluation** replays the pipeline over a tagged test set and scores it with
+deterministic per-stage retrieval metrics (hit rate / MRR) plus the RAGAS suite,
+comparing against a frozen baseline. (Source: [`docs/pipeline.svg`](docs/pipeline.svg); the live
 runtime workflow graph is also rendered in the dashboard's Architecture tab from
 [`docs/pipeline.mmd`](docs/pipeline.mmd).) See the design spec in `docs/superpowers/specs/`.
 
@@ -41,7 +45,8 @@ sitemaps. To (re)build or resize it, then index it:
 
 ```bash
 uv run python scripts/build_corpus.py [per_service] [cap]   # default 4/service, cap 1000 → ~580 URLs
-uv run python -m ragpipe.ingest                             # fetch → chunk → embed → upload to Search
+uv run python -m ragpipe.ingest                             # fetch → extract → chunk → decorate → embed → upload
+uv run python -m ragpipe.ingest 3                           # smoke run: first 3 pages, pruning skipped
 ```
 
 `azd up` runs ingestion automatically; run these manually to refresh the corpus later.
