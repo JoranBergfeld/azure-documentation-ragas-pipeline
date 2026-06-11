@@ -1,0 +1,155 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1180 760" font-family="-apple-system, Segoe UI, Helvetica, Arial, sans-serif">
+  <defs>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="userSpaceOnUse">
+      <path d="M0,0 L8,3 L0,6 Z" fill="#6B7A88"/>
+    </marker>
+    <marker id="arrow-red" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="userSpaceOnUse">
+      <path d="M0,0 L8,3 L0,6 Z" fill="#D64545"/>
+    </marker>
+  </defs>
+  <rect x="0" y="0" width="1180" height="760" rx="14" fill="#FFFFFF"/>
+
+  <text x="32" y="34" font-size="22" font-weight="700" fill="#1B2733">Why RAG pipelines need systematic evaluation</text>
+  <text x="32" y="52" font-size="13" fill="#5B6B7B">RAG quality fails silently at every stage — fluent answers hide broken retrieval and ungrounded generation</text>
+
+  <!-- ===== Band 1: pipeline + failure modes ===== -->
+  <rect x="24" y="66" width="1132" height="240" rx="12" fill="#F5F8FB" stroke="#D6E4F0"/>
+  <text x="40" y="88" font-size="13" font-weight="700" fill="#5B6B7B">1 · Every stage has its own silent failure mode</text>
+
+  <!-- pipeline boxes -->
+  <g>
+    <rect x="40" y="104" width="190" height="52" rx="8" fill="#FAF7FD" stroke="#8661C5" stroke-width="1.5"/>
+    <text x="135" y="125" text-anchor="middle" font-size="12.5" font-weight="600" fill="#1B2733">user query</text>
+    <text x="135" y="140" text-anchor="middle" font-size="10.5" fill="#5B6B7B">free-form question</text>
+  </g>
+  <g>
+    <rect x="270" y="104" width="190" height="52" rx="8" fill="#FAF7FD" stroke="#8661C5" stroke-width="1.5"/>
+    <text x="365" y="125" text-anchor="middle" font-size="12.5" font-weight="600" fill="#1B2733">retriever</text>
+    <text x="365" y="140" text-anchor="middle" font-size="10.5" fill="#5B6B7B">embed · search · rerank</text>
+  </g>
+  <g>
+    <rect x="500" y="104" width="190" height="52" rx="8" fill="#FAF7FD" stroke="#8661C5" stroke-width="1.5"/>
+    <text x="595" y="125" text-anchor="middle" font-size="12.5" font-weight="600" fill="#1B2733">retrieved context</text>
+    <text x="595" y="140" text-anchor="middle" font-size="10.5" fill="#5B6B7B">top-k chunks</text>
+  </g>
+  <g>
+    <rect x="730" y="104" width="190" height="52" rx="8" fill="#FAF7FD" stroke="#8661C5" stroke-width="1.5"/>
+    <text x="825" y="125" text-anchor="middle" font-size="12.5" font-weight="600" fill="#1B2733">generator (LLM)</text>
+    <text x="825" y="140" text-anchor="middle" font-size="10.5" fill="#5B6B7B">answer from context</text>
+  </g>
+  <g>
+    <rect x="960" y="104" width="190" height="52" rx="8" fill="#FAF7FD" stroke="#8661C5" stroke-width="1.5"/>
+    <text x="1055" y="125" text-anchor="middle" font-size="12.5" font-weight="600" fill="#1B2733">answer</text>
+    <text x="1055" y="140" text-anchor="middle" font-size="10.5" fill="#5B6B7B">shown to the user</text>
+  </g>
+  <path d="M230,130 L266,130" stroke="#6B7A88" stroke-width="1.6" fill="none" marker-end="url(#arrow)"/>
+  <path d="M460,130 L496,130" stroke="#6B7A88" stroke-width="1.6" fill="none" marker-end="url(#arrow)"/>
+  <path d="M690,130 L726,130" stroke="#6B7A88" stroke-width="1.6" fill="none" marker-end="url(#arrow)"/>
+  <path d="M920,130 L956,130" stroke="#6B7A88" stroke-width="1.6" fill="none" marker-end="url(#arrow)"/>
+
+  <!-- failure callouts -->
+  <path d="M135,156 L135,184" stroke="#D64545" stroke-width="1.4" stroke-dasharray="4 3" fill="none" marker-end="url(#arrow-red)"/>
+  <path d="M365,156 L365,184" stroke="#D64545" stroke-width="1.4" stroke-dasharray="4 3" fill="none" marker-end="url(#arrow-red)"/>
+  <path d="M595,156 L595,184" stroke="#D64545" stroke-width="1.4" stroke-dasharray="4 3" fill="none" marker-end="url(#arrow-red)"/>
+  <path d="M825,156 L825,184" stroke="#D64545" stroke-width="1.4" stroke-dasharray="4 3" fill="none" marker-end="url(#arrow-red)"/>
+  <path d="M1055,156 L1055,184" stroke="#D64545" stroke-width="1.4" stroke-dasharray="4 3" fill="none" marker-end="url(#arrow-red)"/>
+
+  <g>
+    <rect x="40" y="188" width="190" height="98" rx="8" fill="#FDECEA" stroke="#D64545" stroke-width="1.5"/>
+    <text x="135" y="210" text-anchor="middle" font-size="12" font-weight="600" fill="#A93226">ambiguous intent</text>
+    <text x="135" y="230" text-anchor="middle" font-size="10.5" fill="#7B4A44">vague or under-specified</text>
+    <text x="135" y="244" text-anchor="middle" font-size="10.5" fill="#7B4A44">questions retrieve the</text>
+    <text x="135" y="258" text-anchor="middle" font-size="10.5" fill="#7B4A44">wrong topic entirely</text>
+  </g>
+  <g>
+    <rect x="270" y="188" width="190" height="98" rx="8" fill="#FDECEA" stroke="#D64545" stroke-width="1.5"/>
+    <text x="365" y="210" text-anchor="middle" font-size="12" font-weight="600" fill="#A93226">missed chunks</text>
+    <text x="365" y="230" text-anchor="middle" font-size="10.5" fill="#7B4A44">wrong chunking, weak</text>
+    <text x="365" y="244" text-anchor="middle" font-size="10.5" fill="#7B4A44">embeddings, or bad top-k</text>
+    <text x="365" y="258" text-anchor="middle" font-size="10.5" fill="#7B4A44">skip the gold passage</text>
+  </g>
+  <g>
+    <rect x="500" y="188" width="190" height="98" rx="8" fill="#FDECEA" stroke="#D64545" stroke-width="1.5"/>
+    <text x="595" y="210" text-anchor="middle" font-size="12" font-weight="600" fill="#A93226">noisy context</text>
+    <text x="595" y="230" text-anchor="middle" font-size="10.5" fill="#7B4A44">irrelevant passages crowd</text>
+    <text x="595" y="244" text-anchor="middle" font-size="10.5" fill="#7B4A44">out the signal and distract</text>
+    <text x="595" y="258" text-anchor="middle" font-size="10.5" fill="#7B4A44">the generator</text>
+  </g>
+  <g>
+    <rect x="730" y="188" width="190" height="98" rx="8" fill="#FDECEA" stroke="#D64545" stroke-width="1.5"/>
+    <text x="825" y="210" text-anchor="middle" font-size="12" font-weight="600" fill="#A93226">hallucination</text>
+    <text x="825" y="230" text-anchor="middle" font-size="10.5" fill="#7B4A44">the LLM answers from its</text>
+    <text x="825" y="244" text-anchor="middle" font-size="10.5" fill="#7B4A44">own priors — ignoring or</text>
+    <text x="825" y="258" text-anchor="middle" font-size="10.5" fill="#7B4A44">contradicting the context</text>
+  </g>
+  <g>
+    <rect x="960" y="188" width="190" height="98" rx="8" fill="#FDECEA" stroke="#D64545" stroke-width="1.5"/>
+    <text x="1055" y="210" text-anchor="middle" font-size="12" font-weight="600" fill="#A93226">plausible &amp; wrong</text>
+    <text x="1055" y="230" text-anchor="middle" font-size="10.5" fill="#7B4A44">fluent, confident answers</text>
+    <text x="1055" y="244" text-anchor="middle" font-size="10.5" fill="#7B4A44">look correct to users —</text>
+    <text x="1055" y="258" text-anchor="middle" font-size="10.5" fill="#7B4A44">and to demos</text>
+  </g>
+
+  <!-- ===== Band 2: why it slips through ===== -->
+  <rect x="24" y="322" width="1132" height="170" rx="12" fill="#FFFBF2" stroke="#EAD9AE"/>
+  <text x="40" y="344" font-size="13" font-weight="700" fill="#5B6B7B">2 · Why these failures slip through without an evaluation harness</text>
+  <g>
+    <rect x="40" y="360" width="262" height="112" rx="8" fill="#FFF6E6" stroke="#E3B341" stroke-width="1.5"/>
+    <text x="171" y="384" text-anchor="middle" font-size="12.5" font-weight="600" fill="#1B2733">failures are silent</text>
+    <text x="171" y="404" text-anchor="middle" font-size="10.5" fill="#5B6B7B">no exception, no error log —</text>
+    <text x="171" y="418" text-anchor="middle" font-size="10.5" fill="#5B6B7B">the pipeline “works” and still</text>
+    <text x="171" y="432" text-anchor="middle" font-size="10.5" fill="#5B6B7B">returns a wrong answer</text>
+  </g>
+  <g>
+    <rect x="324" y="360" width="262" height="112" rx="8" fill="#FFF6E6" stroke="#E3B341" stroke-width="1.5"/>
+    <text x="455" y="384" text-anchor="middle" font-size="12.5" font-weight="600" fill="#1B2733">every knob regresses quietly</text>
+    <text x="455" y="404" text-anchor="middle" font-size="10.5" fill="#5B6B7B">chunk size · embedding model ·</text>
+    <text x="455" y="418" text-anchor="middle" font-size="10.5" fill="#5B6B7B">prompt · top-k · reranker — each</text>
+    <text x="455" y="432" text-anchor="middle" font-size="10.5" fill="#5B6B7B">change can degrade another stage</text>
+  </g>
+  <g>
+    <rect x="608" y="360" width="262" height="112" rx="8" fill="#FFF6E6" stroke="#E3B341" stroke-width="1.5"/>
+    <text x="739" y="384" text-anchor="middle" font-size="12.5" font-weight="600" fill="#1B2733">manual review doesn’t scale</text>
+    <text x="739" y="404" text-anchor="middle" font-size="10.5" fill="#5B6B7B">hundreds of query–context–answer</text>
+    <text x="739" y="418" text-anchor="middle" font-size="10.5" fill="#5B6B7B">triples per experiment; nobody</text>
+    <text x="739" y="432" text-anchor="middle" font-size="10.5" fill="#5B6B7B">re-reads them on every change</text>
+  </g>
+  <g>
+    <rect x="892" y="360" width="262" height="112" rx="8" fill="#FFF6E6" stroke="#E3B341" stroke-width="1.5"/>
+    <text x="1023" y="384" text-anchor="middle" font-size="12.5" font-weight="600" fill="#1B2733">ground truth is expensive</text>
+    <text x="1023" y="404" text-anchor="middle" font-size="10.5" fill="#5B6B7B">most domains have no labeled</text>
+    <text x="1023" y="418" text-anchor="middle" font-size="10.5" fill="#5B6B7B">Q&amp;A dataset — human annotation</text>
+    <text x="1023" y="432" text-anchor="middle" font-size="10.5" fill="#5B6B7B">is slow and costly</text>
+  </g>
+
+  <!-- ===== Band 3: what evaluation must provide ===== -->
+  <rect x="24" y="508" width="1132" height="186" rx="12" fill="#F3FAF4" stroke="#CDE9D2"/>
+  <text x="40" y="530" font-size="13" font-weight="700" fill="#5B6B7B">3 · What an evaluation framework must provide</text>
+  <g>
+    <rect x="40" y="546" width="262" height="92" rx="8" fill="#E5F5E9" stroke="#2E9E4B" stroke-width="1.5"/>
+    <text x="171" y="570" text-anchor="middle" font-size="12.5" font-weight="600" fill="#1B2733">automated &amp; repeatable</text>
+    <text x="171" y="590" text-anchor="middle" font-size="10.5" fill="#5B6B7B">scores every run the same way —</text>
+    <text x="171" y="604" text-anchor="middle" font-size="10.5" fill="#5B6B7B">regressions surface in CI, not in prod</text>
+  </g>
+  <g>
+    <rect x="324" y="546" width="262" height="92" rx="8" fill="#E5F5E9" stroke="#2E9E4B" stroke-width="1.5"/>
+    <text x="455" y="570" text-anchor="middle" font-size="12.5" font-weight="600" fill="#1B2733">component-level scores</text>
+    <text x="455" y="590" text-anchor="middle" font-size="10.5" fill="#5B6B7B">retrieval and generation graded</text>
+    <text x="455" y="604" text-anchor="middle" font-size="10.5" fill="#5B6B7B">separately — know *which* stage broke</text>
+  </g>
+  <g>
+    <rect x="608" y="546" width="262" height="92" rx="8" fill="#E5F5E9" stroke="#2E9E4B" stroke-width="1.5"/>
+    <text x="739" y="570" text-anchor="middle" font-size="12.5" font-weight="600" fill="#1B2733">little or no labeled data</text>
+    <text x="739" y="590" text-anchor="middle" font-size="10.5" fill="#5B6B7B">works from the corpus itself, not</text>
+    <text x="739" y="604" text-anchor="middle" font-size="10.5" fill="#5B6B7B">from a hand-built gold dataset</text>
+  </g>
+  <g>
+    <rect x="892" y="546" width="262" height="92" rx="8" fill="#E5F5E9" stroke="#2E9E4B" stroke-width="1.5"/>
+    <text x="1023" y="570" text-anchor="middle" font-size="12.5" font-weight="600" fill="#1B2733">comparable across configs</text>
+    <text x="1023" y="590" text-anchor="middle" font-size="10.5" fill="#5B6B7B">a number you can trust to rank</text>
+    <text x="1023" y="604" text-anchor="middle" font-size="10.5" fill="#5B6B7B">variant A vs variant B</text>
+  </g>
+  <text x="590" y="672" text-anchor="middle" font-size="12" font-weight="600" fill="#2E7D43">→ this is exactly the gap RAGAS and ARES were built to fill (see companion diagram)</text>
+
+  <text x="32" y="736" font-size="10.5" fill="#9AA8B5">why-rag-evaluation — companion: ragas-ares-gaps</text>
+</svg>
