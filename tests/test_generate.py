@@ -38,3 +38,25 @@ async def test_generator_returns_agent_text():
 
     assert answer == "Alpha is the first letter."
     assert "Alpha fact." in agent.last_prompt
+
+
+def test_prompt_without_previous_answer_has_no_corrective_block():
+    prompt = build_grounding_prompt("q", [_chunk("a", "Alpha.")])
+    assert "previous_answer" not in prompt
+
+
+def test_prompt_with_previous_answer_includes_corrective_block():
+    prompt = build_grounding_prompt(
+        "q", [_chunk("a", "Alpha.")], previous_answer="Bad claim."
+    )
+    assert "<previous_answer>" in prompt
+    assert "Bad claim." in prompt
+    assert "could not be verified" in prompt
+
+
+@pytest.mark.asyncio
+async def test_generator_threads_previous_answer_into_prompt():
+    agent = FakeAgent("better answer")
+    gen = Generator(agent)
+    await gen.generate("q", [_chunk("a", "Alpha.")], previous_answer="old answer")
+    assert "old answer" in agent.last_prompt
