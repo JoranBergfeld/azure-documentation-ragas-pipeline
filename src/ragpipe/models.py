@@ -30,6 +30,10 @@ class PipelineState:
     faithfulness: float | None = None
     attempt: int = 0
     low_confidence: bool = False
+    # Directive guardrail (ADR-0009): when retries exhaust, the answer is
+    # replaced with a fixed abstention and this flag is set. The suppressed
+    # answer survives in the trace only.
+    abstained: bool = False
     trace: list[TraceEvent] = field(default_factory=list)
 
     def add_trace(self, stage: str, data: dict[str, Any]) -> None:
