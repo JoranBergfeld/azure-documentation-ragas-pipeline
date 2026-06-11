@@ -48,3 +48,42 @@ def test_make_deps_wires_callables_from_injected_components():
     assert deps.max_retries == 2
     assert callable(deps.dense)
     assert deps.dense("q") == []
+
+
+def test_make_deps_threads_top_k_and_new_signatures():
+    from ragpipe.app_wiring import make_deps
+
+    class _S:
+        faithfulness_threshold = 0.7
+        max_retries = 2
+        rrf_k = 60
+        top_k = 4
+
+    class _Rerank:
+        def __init__(self):
+            self.k = None
+
+        def rerank(self, q, fused, top_k=None):
+            self.k = top_k
+            return fused
+
+    class _Gen:
+        def __init__(self):
+            self.prev = "sentinel"
+
+        async def generate(self, q, chunks, previous_answer=None):
+            self.prev = previous_answer
+            return "a"
+
+    class _Id:
+        def retrieve(self, q):
+            return []
+
+        def score(self, q, a, c):
+            return 1.0
+
+    rr, gen = _Rerank(), _Gen()
+    deps = make_deps(_S(), dense=_Id(), bm25=_Id(), reranker=rr, generator=gen, scorer=_Id())
+    assert deps.top_k == 4
+    deps.rerank("q", [], 9)
+    assert rr.k == 9

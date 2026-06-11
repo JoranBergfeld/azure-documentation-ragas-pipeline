@@ -18,18 +18,21 @@ def make_deps(
     return PipelineDeps(
         dense=lambda q: dense.retrieve(q),
         bm25=lambda q: bm25.retrieve(q),
-        rerank=lambda q, fused: reranker.rerank(q, fused),
-        generate=lambda q, chunks: generator.generate(q, chunks),
+        rerank=lambda q, fused, k: reranker.rerank(q, fused, top_k=k),
+        generate=lambda q, chunks, prev: generator.generate(q, chunks, prev),
         score=lambda q, a, c: scorer.score(q, a, c),
         threshold=settings.faithfulness_threshold,
         max_retries=settings.max_retries,
         rrf_k=settings.rrf_k,
+        top_k=settings.top_k,
     )
 
 
 def build_pipeline_fn(
     settings: Settings,
 ) -> Callable[[str], Awaitable[PipelineState]]:  # pragma: no cover - live wiring
+    from functools import lru_cache
+
     from azure.identity import DefaultAzureCredential
     from azure.search.documents import SearchClient
     from agent_framework.foundry import FoundryAgent
@@ -44,10 +47,17 @@ def build_pipeline_fn(
 
     cred = DefaultAzureCredential()
     search = SearchClient(settings.search_endpoint, settings.search_index, cred)
-    # Synchronous embed callable over the Azure OpenAI endpoint (Entra auth). The
-    # underlying openai client is sync, so it is safe to call from inside the
-    # running run_pipeline event loop (no nested-loop bridging needed).
-    embed = build_embed_fn(settings)
+
+    # One embedding per query string, shared by the dense leg and the hybrid
+    # rerank call (and across guardrail retries).
+    embed_raw = build_embed_fn(settings)
+
+    @lru_cache(maxsize=128)
+    def _embed_cached(text: str) -> tuple[float, ...]:
+        return tuple(embed_raw(text))
+
+    def embed(text: str) -> list[float]:
+        return list(_embed_cached(text))
 
     agent = FoundryAgent(
         project_endpoint=settings.foundry_project_endpoint,
@@ -57,9 +67,13 @@ def build_pipeline_fn(
     )
     deps = make_deps(
         settings,
-        dense=DenseRetriever(search, embed, settings.top_k),
-        bm25=BM25Retriever(search, settings.top_k),
-        reranker=SemanticReranker(search, SEMANTIC_CONFIG_NAME, settings.top_k),
+        # Legs fetch the wider candidate pool; rerank narrows to top_k (widened
+        # per retry by the workflow).
+        dense=DenseRetriever(search, embed, settings.candidate_pool),
+        bm25=BM25Retriever(search, settings.candidate_pool),
+        reranker=SemanticReranker(
+            search, SEMANTIC_CONFIG_NAME, settings.top_k, embed_fn=embed
+        ),
         generator=Generator(agent),
         scorer=FaithfulnessScorer(build_ragas_faithfulness(settings)),
     )
