@@ -192,6 +192,9 @@ def build_ragas_evaluator(settings):  # pragma: no cover
     context metrics on the *final* reranked context set.
     """
     async def evaluator_fn(records: list[EvalRecord]) -> list[EvalRecord]:
+        if not records:
+            return records
+
         from ragpipe.guardrail import _ensure_ragas_importable
 
         _ensure_ragas_importable()
