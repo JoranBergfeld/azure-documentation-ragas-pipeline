@@ -24,11 +24,11 @@ def test_make_deps_wires_callables_from_injected_components():
             return []
 
     class FakeReranker:
-        def rerank(self, q, fused):
+        def rerank(self, q, fused, top_k=None):
             return []
 
     class FakeGen:
-        async def generate(self, q, chunks):
+        async def generate(self, q, chunks, previous_answer=None):
             return "ans"
 
     class FakeScorer:
