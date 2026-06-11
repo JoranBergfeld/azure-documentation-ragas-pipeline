@@ -53,8 +53,75 @@ def _ensure_ragas_importable() -> None:  # pragma: no cover
     sys.modules["langchain_community.chat_models.vertexai"] = placeholder
 
 
-def build_ragas_faithfulness(settings) -> MetricFn:  # pragma: no cover
-    """Build a faithfulness metric callable backed by Foundry models via RAGAS."""
+def build_ragas_faithfulness(settings) -> MetricFn:
+    """Faithfulness gate judged by a non-generator family (ADR-0009).
+
+    The gate decides what users see, so it must not share a family with the
+    generator: a judge from the generator's own family is systematically
+    lenient on its own outputs (self-preference bias). Routed by provider
+    (ADR-0011): Claude on the /anthropic route, every other family on the
+    OpenAI-compatible route. Raises if JUDGE_MODEL is unset — silently falling
+    back to the generator would recreate the circular setup this replaces.
+    """
+    if not settings.judge_model:
+        raise ValueError(
+            "JUDGE_MODEL is required: the faithfulness gate is judged by a "
+            "non-generator family (ADR-0009); set it in .env"
+        )
+    from ragpipe.foundry_judge import judge_provider
+
+    if judge_provider(settings.judge_model) == "anthropic":
+        return _build_claude_faithfulness(settings)
+    return _build_openai_faithfulness(settings)
+
+
+def _build_claude_faithfulness(settings) -> MetricFn:  # pragma: no cover - live wiring
+    _ensure_ragas_importable()
+
+    from azure.identity import DefaultAzureCredential, get_bearer_token_provider
+    from langchain_anthropic import ChatAnthropic
+    from ragas.dataset_schema import SingleTurnSample
+    from ragas.llms import LangchainLLMWrapper
+    from ragas.metrics import Faithfulness
+
+    from ragpipe.embeddings import anthropic_endpoint_from_project
+    from ragpipe.foundry_judge import AI_FOUNDRY_SCOPE, JUDGE_MAX_RETRIES, JUDGE_TIMEOUT
+
+    token_provider = get_bearer_token_provider(DefaultAzureCredential(), AI_FOUNDRY_SCOPE)
+    base_url = anthropic_endpoint_from_project(settings.foundry_project_endpoint)
+
+    def _metric() -> Faithfulness:
+        # Rebuilt per scoring call: Entra bearer tokens expire (~1h) and
+        # ChatAnthropic fixes headers at construction. azure-identity caches the
+        # token, so this is cheap until a refresh is actually due.
+        judge_chat = ChatAnthropic(
+            model=settings.judge_model,
+            base_url=base_url,
+            api_key="placeholder",  # satisfies validation; nulled below
+            default_headers={"Authorization": f"Bearer {token_provider()}"},
+            max_tokens=4096,
+            temperature=0,
+            timeout=JUDGE_TIMEOUT,
+            max_retries=JUDGE_MAX_RETRIES,
+        )
+        # The anthropic SDK sends X-Api-Key alongside any custom Authorization
+        # header; a gateway that validates X-Api-Key first would 401. Clearing
+        # the key on both underlying clients removes the header entirely
+        # (verified against anthropic 0.109.1: absent from built requests).
+        judge_chat._client.api_key = None
+        judge_chat._async_client.api_key = None
+        return Faithfulness(llm=LangchainLLMWrapper(judge_chat))
+
+    async def metric_fn(*, question: str, answer: str, contexts: list[str]) -> float:
+        sample = SingleTurnSample(
+            user_input=question, response=answer, retrieved_contexts=contexts
+        )
+        return float(await _metric().single_turn_ascore(sample))
+
+    return metric_fn
+
+
+def _build_openai_faithfulness(settings) -> MetricFn:  # pragma: no cover - live wiring
     _ensure_ragas_importable()
 
     from azure.identity import DefaultAzureCredential, get_bearer_token_provider
@@ -63,20 +130,31 @@ def build_ragas_faithfulness(settings) -> MetricFn:  # pragma: no cover
     from ragas.llms import LangchainLLMWrapper
     from ragas.metrics import Faithfulness
 
-    from ragpipe.embeddings import openai_endpoint_from_project
+    from ragpipe.embeddings import (
+        COGNITIVE_SERVICES_SCOPE,
+        services_endpoint_from_project,
+    )
+    from ragpipe.foundry_judge import JUDGE_MAX_RETRIES, JUDGE_TIMEOUT
 
     token_provider = get_bearer_token_provider(
-        DefaultAzureCredential(), "https://cognitiveservices.azure.com/.default"
+        DefaultAzureCredential(), COGNITIVE_SERVICES_SCOPE
     )
-    judge = LangchainLLMWrapper(
-        AzureChatOpenAI(
-            azure_endpoint=openai_endpoint_from_project(settings.foundry_project_endpoint),
-            azure_deployment=settings.foundry_chat_model,
-            api_version="2024-10-21",
-            azure_ad_token_provider=token_provider,
-        )
+    # azure_ad_token_provider auto-refreshes, so the judge is built once (the
+    # Anthropic path rebuilds per call because ChatAnthropic fixes headers at
+    # construction). No explicit temperature: reasoning deployments on this
+    # route may reject sampling overrides (matches the offline DeepSeek judge).
+    # model= sets the request-body "model" field: sold-by-Azure servers (e.g.
+    # DeepSeek's sglang) validate it and reject a null; Kimi tolerates either.
+    judge_chat = AzureChatOpenAI(
+        azure_endpoint=services_endpoint_from_project(settings.foundry_project_endpoint),
+        azure_deployment=settings.judge_model,
+        model=settings.judge_model,
+        api_version="2024-10-21",
+        azure_ad_token_provider=token_provider,
+        timeout=JUDGE_TIMEOUT,
+        max_retries=JUDGE_MAX_RETRIES,
     )
-    metric = Faithfulness(llm=judge)
+    metric = Faithfulness(llm=LangchainLLMWrapper(judge_chat))
 
     async def metric_fn(*, question: str, answer: str, contexts: list[str]) -> float:
         sample = SingleTurnSample(
@@ -98,9 +176,13 @@ def decide_next(
 ) -> LoopDecision:
     """Decide whether to accept the answer, retry, or give up.
 
-    A missing score (judge failure) is fail-closed: never PASS.
+    A missing score (judge failure) is fail-closed AND fail-fast: it can never
+    PASS, and it goes straight to EXHAUSTED — retrying regenerates the answer,
+    which cannot fix a judge infrastructure failure and only multiplies cost.
     """
-    if score is not None and score >= threshold:
+    if score is None:
+        return LoopDecision.EXHAUSTED
+    if score >= threshold:
         return LoopDecision.PASS
     if attempt < max_retries:
         return LoopDecision.RETRY

@@ -75,6 +75,24 @@ def test_eval_reads_results_file(client, tmp_path, monkeypatch):
     assert body["perStage"]["dense"]["context_precision"] == 0.54
 
 
+def test_run_reports_abstention():
+    from fastapi.testclient import TestClient
+
+    from app import api
+    from ragpipe.models import PipelineState
+
+    async def fake_pipeline(q):
+        return PipelineState(query=q, answer="abstained text", abstained=True, low_confidence=True)
+
+    api.app.dependency_overrides[api.get_pipeline_fn] = lambda: fake_pipeline
+    try:
+        resp = TestClient(api.app).post("/run", json={"query": "x"})
+        assert resp.status_code == 200
+        assert resp.json()["abstained"] is True
+    finally:
+        api.app.dependency_overrides.clear()
+
+
 def test_eval_missing_file_returns_empty(client, tmp_path, monkeypatch):
     monkeypatch.setattr(api, "EVAL_RESULTS_PATH", str(tmp_path / "nope.json"))
     res = client.get("/eval")

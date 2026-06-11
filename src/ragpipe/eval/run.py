@@ -9,6 +9,7 @@ from ragpipe.app_wiring import build_pipeline_fn
 from ragpipe.config import Settings, TestsetMode
 from ragpipe.eval.harness import (
     aggregate,
+    aggregate_by_tag,
     build_per_stage_context_evaluator,
     build_ragas_evaluator,
     coverage,
@@ -63,17 +64,19 @@ def main() -> None:  # pragma: no cover - integration entry point
         records = asyncio.run(per_stage_fn(records))
 
     means = aggregate(records)
+    means_by_tag = aggregate_by_tag(records)
     cov = {k: {"valid": v, "total": t} for k, (v, t) in coverage(records).items()}
     payload = _clean(
         {
             "means": means,
+            "means_by_tag": means_by_tag,
             "coverage": cov,
             "records": [r.__dict__ for r in records],
         }
     )
     with open("eval_results.json", "w") as f:
         json.dump(payload, f, indent=2, allow_nan=False)
-    print(json.dumps({"means": means, "coverage": cov}, indent=2))
+    print(json.dumps({"means": means, "means_by_tag": means_by_tag, "coverage": cov}, indent=2))
 
 
 if __name__ == "__main__":  # pragma: no cover

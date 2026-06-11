@@ -150,16 +150,12 @@ git commit -m "feat(eval): deterministic URL-match retrieval metrics (ADR-0002)"
 
 **Files:**
 - Modify: `src/ragpipe/eval/testset.py`
-- Test: create `tests/test_testset.py` (no dedicated testset test file exists yet)
+- Test: append to `tests/eval/test_testset.py` (existing file; eval tests live under `tests/eval/`)
 
 - [ ] **Step 1: Write the failing tests**
 
 ```python
-# tests/test_testset.py
-import json
-
-from ragpipe.config import TestsetMode
-from ragpipe.eval.testset import TestItem, load_testset
+# append to tests/eval/test_testset.py (json/TestsetMode/TestItem/load_testset already imported there)
 
 
 def test_load_testset_parses_tags(tmp_path):
@@ -182,7 +178,7 @@ def test_testitem_tags_default_empty():
 
 - [ ] **Step 2: Run tests to verify they fail**
 
-Run: `uv run pytest tests/test_testset.py -q`
+Run: `uv run pytest tests/eval/test_testset.py -q`
 Expected: FAIL — `TypeError: __init__() got an unexpected keyword argument 'tags'` / attribute error
 
 - [ ] **Step 3: Implement**
@@ -221,7 +217,7 @@ Expected: all pass
 - [ ] **Step 5: Commit**
 
 ```bash
-git add src/ragpipe/eval/testset.py tests/test_testset.py
+git add src/ragpipe/eval/testset.py tests/eval/test_testset.py
 git commit -m "feat(eval): optional tags on test items (ADR-0006)"
 ```
 
@@ -232,12 +228,12 @@ git commit -m "feat(eval): optional tags on test items (ADR-0006)"
 **Files:**
 - Modify: `src/ragpipe/eval/harness.py` (EvalRecord, run_harness, new aggregate_by_tag)
 - Modify: `src/ragpipe/eval/run.py` (payload)
-- Test: create `tests/test_harness_metrics.py`
+- Test: create `tests/eval/test_harness_metrics.py` (existing run_harness tests live in `tests/eval/test_harness.py` — they must keep passing; the new always-on hit_rate@/mrr@ keys may require updating any exact-metrics assertions there)
 
 - [ ] **Step 1: Write the failing tests**
 
 ```python
-# tests/test_harness_metrics.py
+# tests/eval/test_harness_metrics.py
 import asyncio
 
 from ragpipe.eval.harness import EvalRecord, aggregate, aggregate_by_tag, run_harness
@@ -303,7 +299,7 @@ def test_aggregate_unchanged_for_plain_metrics():
 
 - [ ] **Step 2: Run tests to verify they fail**
 
-Run: `uv run pytest tests/test_harness_metrics.py -q`
+Run: `uv run pytest tests/eval/test_harness_metrics.py -q`
 Expected: FAIL — `EvalRecord.__init__() got an unexpected keyword argument 'tags'` / ImportError for aggregate_by_tag
 
 - [ ] **Step 3: Implement in `harness.py`**
@@ -384,7 +380,7 @@ Expected: all pass
 - [ ] **Step 6: Commit**
 
 ```bash
-git add src/ragpipe/eval/harness.py src/ragpipe/eval/run.py tests/test_harness_metrics.py
+git add src/ragpipe/eval/harness.py src/ragpipe/eval/run.py tests/eval/
 git commit -m "feat(eval): always-on per-stage hit_rate/mrr + per-tag aggregation"
 ```
 
@@ -394,12 +390,12 @@ git commit -m "feat(eval): always-on per-stage hit_rate/mrr + per-tag aggregatio
 
 **Files:**
 - Modify: `data/testset.jsonl`
-- Test: append to `tests/test_testset.py`
+- Test: append to `tests/eval/test_testset.py`
 
 - [ ] **Step 1: Write the failing corpus-membership test**
 
 ```python
-# append to tests/test_testset.py
+# append to tests/eval/test_testset.py
 import yaml
 
 from ragpipe.eval.retrieval_metrics import normalize_url
@@ -435,7 +431,7 @@ def test_testset_has_hard_subsets():
 
 - [ ] **Step 2: Run to see what fails**
 
-Run: `uv run pytest tests/test_testset.py -q`
+Run: `uv run pytest tests/eval/test_testset.py -q`
 Expected: `test_testset_has_hard_subsets` FAILS (only 16 untagged items). `test_every_testset_url_is_in_the_corpus` may also fail — that tells you which of the original 16 items reference pages outside the corpus.
 
 - [ ] **Step 3: Repair original items + author the hard items**
@@ -458,13 +454,13 @@ Expected: `test_testset_has_hard_subsets` FAILS (only 16 untagged items). `test_
 
 - [ ] **Step 4: Run tests to verify they pass**
 
-Run: `uv run pytest tests/test_testset.py -q`
+Run: `uv run pytest tests/eval/test_testset.py -q`
 Expected: all pass
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add data/testset.jsonl tests/test_testset.py
+git add data/testset.jsonl tests/eval/test_testset.py
 git commit -m "feat(eval): tag testset, repair gold URLs, add paraphrase/lookalike hard items"
 ```
 
@@ -531,7 +527,7 @@ Screening criteria (orchestrator applies; spec §6): the question is answerable 
 
 - [ ] **Step 4: Run the testset tests**
 
-Run: `uv run pytest tests/test_testset.py -q`
+Run: `uv run pytest tests/eval/test_testset.py -q`
 Expected: all pass (membership test validates the appended URLs)
 
 - [ ] **Step 5: Commit**

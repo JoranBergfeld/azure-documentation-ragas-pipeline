@@ -1,0 +1,96 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1180 620" font-family="-apple-system, Segoe UI, Helvetica, Arial, sans-serif">
+  <defs>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="userSpaceOnUse">
+      <path d="M0,0 L8,3 L0,6 Z" fill="#6B7A88"/>
+    </marker>
+  </defs>
+  <rect x="0" y="0" width="1180" height="620" rx="14" fill="#FFFFFF"/>
+
+  <text x="32" y="34" font-size="22" font-weight="700" fill="#1B2733">③ Evaluation — in detail</text>
+  <text x="32" y="52" font-size="13" fill="#5B6B7B">uv run python -m ragpipe.eval.run — deterministic metrics on every run, RAGAS judge suite on top, baseline-anchored (ADR-0002 / 0006)</text>
+
+  <!-- ===== Stage 1: test set ===== -->
+  <rect x="24" y="66" width="1132" height="118" rx="12" fill="#F5F8FB" stroke="#D6E4F0"/>
+  <text x="40" y="88" font-size="13" font-weight="700" fill="#5B6B7B">1 · Test set — data/testset.jsonl (33 items)</text>
+  <g>
+    <rect x="40" y="104" width="280" height="52" rx="8" fill="#FFF6E6" stroke="#E3B341" stroke-width="1.5"/>
+    <text x="180" y="125" text-anchor="middle" font-size="12.5" font-weight="600" fill="#1B2733">tagged items</text>
+    <text x="180" y="140" text-anchor="middle" font-size="10.5" fill="#5B6B7B">16 original · 7 paraphrase · 7 lookalike · 3 synthetic</text>
+  </g>
+  <g>
+    <rect x="360" y="104" width="300" height="52" rx="8" fill="#EEF2F6" stroke="#9AA8B5" stroke-width="1.5"/>
+    <text x="510" y="125" text-anchor="middle" font-size="12.5" font-weight="600" fill="#1B2733">corpus-membership guard</text>
+    <text x="510" y="140" text-anchor="middle" font-size="10.5" fill="#5B6B7B">every gold URL ⊆ corpus_sources.yaml — pytest-enforced</text>
+  </g>
+  <g>
+    <rect x="700" y="104" width="300" height="52" rx="8" fill="#EEF2F6" stroke="#9AA8B5" stroke-width="1.5"/>
+    <text x="850" y="125" text-anchor="middle" font-size="12.5" font-weight="600" fill="#1B2733">each item</text>
+    <text x="850" y="140" text-anchor="middle" font-size="10.5" fill="#5B6B7B">question · ground_truth · gold URL · tags</text>
+  </g>
+  <path d="M320,130 L356,130" stroke="#6B7A88" stroke-width="1.6" fill="none" marker-end="url(#arrow)"/>
+  <path d="M660,130 L696,130" stroke="#6B7A88" stroke-width="1.6" fill="none" marker-end="url(#arrow)"/>
+
+  <!-- ===== Stage 2: harness ===== -->
+  <rect x="24" y="200" width="1132" height="118" rx="12" fill="#F5F8FB" stroke="#D6E4F0"/>
+  <text x="40" y="222" font-size="13" font-weight="700" fill="#5B6B7B">2 · Harness — run_harness (sequential, per item)</text>
+  <g>
+    <rect x="40" y="238" width="280" height="52" rx="8" fill="#FAF7FD" stroke="#8661C5" stroke-width="1.5"/>
+    <text x="180" y="259" text-anchor="middle" font-size="12.5" font-weight="600" fill="#1B2733">run pipeline ②</text>
+    <text x="180" y="274" text-anchor="middle" font-size="10.5" fill="#5B6B7B">full live pipeline incl. guardrail loop</text>
+  </g>
+  <g>
+    <rect x="360" y="238" width="380" height="52" rx="8" fill="#EEF2F6" stroke="#9AA8B5" stroke-width="1.5"/>
+    <text x="550" y="259" text-anchor="middle" font-size="12.5" font-weight="600" fill="#1B2733">EvalRecord</text>
+    <text x="550" y="274" text-anchor="middle" font-size="10.5" fill="#5B6B7B">answer · contexts · stage contexts + URLs · tags</text>
+  </g>
+  <path d="M320,264 L356,264" stroke="#6B7A88" stroke-width="1.6" fill="none" marker-end="url(#arrow)"/>
+
+  <!-- ===== Stage 3: scoring ===== -->
+  <rect x="24" y="334" width="1132" height="146" rx="12" fill="#F3FAF4" stroke="#CDE9D2"/>
+  <text x="40" y="356" font-size="13" font-weight="700" fill="#5B6B7B">3 · Scoring — two independent metric families</text>
+  <g>
+    <rect x="40" y="372" width="520" height="44" rx="8" fill="#E5F5E9" stroke="#2E9E4B" stroke-width="1.5"/>
+    <text x="300" y="390" text-anchor="middle" font-size="12" font-weight="600" fill="#1B2733">Deterministic (ADR-0002) — every run, free, exact</text>
+    <text x="300" y="405" text-anchor="middle" font-size="10.5" fill="#5B6B7B">normalize_url (strip locale/query/fragment) → hit_rate@stage · mrr@stage vs gold URL</text>
+  </g>
+  <g>
+    <rect x="40" y="426" width="520" height="44" rx="8" fill="#E5F5E9" stroke="#2E9E4B" stroke-width="1.5"/>
+    <text x="300" y="444" text-anchor="middle" font-size="12" font-weight="600" fill="#1B2733">RAGAS suite (LLM judge + embeddings)</text>
+    <text x="300" y="459" text-anchor="middle" font-size="10.5" fill="#5B6B7B">faithfulness · answer_relevancy · context_precision/recall (+ optional per-stage sweep)</text>
+  </g>
+  <g>
+    <rect x="640" y="396" width="300" height="52" rx="8" fill="#EEF2F6" stroke="#9AA8B5" stroke-width="1.5"/>
+    <text x="790" y="417" text-anchor="middle" font-size="12.5" font-weight="600" fill="#1B2733">aggregate</text>
+    <text x="790" y="432" text-anchor="middle" font-size="10.5" fill="#5B6B7B">NaN-aware means + coverage · aggregate_by_tag</text>
+  </g>
+  <path d="M560,394 L636,412" stroke="#6B7A88" stroke-width="1.6" fill="none" marker-end="url(#arrow)"/>
+  <path d="M560,448 L636,432" stroke="#6B7A88" stroke-width="1.6" fill="none" marker-end="url(#arrow)"/>
+  <text x="960" y="416" font-size="10.5" fill="#5B6B7B">judge = chat model (gpt-5.4) today;</text>
+  <text x="960" y="430" font-size="10.5" fill="#5B6B7B">split to claude-sonnet-4-6 next (ADR-0008)</text>
+
+  <!-- ===== Stage 4: results & comparison ===== -->
+  <rect x="24" y="496" width="1132" height="106" rx="12" fill="#F5F8FB" stroke="#D6E4F0"/>
+  <text x="40" y="518" font-size="13" font-weight="700" fill="#5B6B7B">4 · Results &amp; baseline comparison (ADR-0006)</text>
+  <g>
+    <rect x="40" y="532" width="240" height="52" rx="8" fill="#FFF6E6" stroke="#E3B341" stroke-width="1.5"/>
+    <text x="160" y="553" text-anchor="middle" font-size="12.5" font-weight="600" fill="#1B2733">eval_results.json</text>
+    <text x="160" y="568" text-anchor="middle" font-size="10.5" fill="#5B6B7B">means · means_by_tag · coverage · records</text>
+  </g>
+  <g>
+    <rect x="320" y="532" width="420" height="52" rx="8" fill="#EEF2F6" stroke="#9AA8B5" stroke-width="1.5"/>
+    <text x="530" y="553" text-anchor="middle" font-size="12.5" font-weight="600" fill="#1B2733">compare vs eval_baseline.json</text>
+    <text x="530" y="568" text-anchor="middle" font-size="10.5" fill="#5B6B7B">criteria: hit_rate/mrr up on paraphrase+lookalike · no original regression · faithfulness holds</text>
+  </g>
+  <g>
+    <rect x="780" y="532" width="376" height="52" rx="8" fill="#EEF2F6" stroke="#9AA8B5" stroke-width="1.5"/>
+    <text x="968" y="553" text-anchor="middle" font-size="12.5" font-weight="600" fill="#1B2733">Streamlit dashboard · GET /eval</text>
+    <text x="968" y="568" text-anchor="middle" font-size="10.5" fill="#5B6B7B">overall chart · per-stage grouped bars · per-item records</text>
+  </g>
+  <path d="M280,558 L316,558" stroke="#6B7A88" stroke-width="1.6" fill="none" marker-end="url(#arrow)"/>
+  <path d="M740,558 L776,558" stroke="#6B7A88" stroke-width="1.6" fill="none" marker-end="url(#arrow)"/>
+
+  <!-- inter-stage arrows -->
+  <path d="M90,184 L90,196" stroke="#6B7A88" stroke-width="1.8" fill="none" marker-end="url(#arrow)"/>
+  <path d="M90,318 L90,330" stroke="#6B7A88" stroke-width="1.8" fill="none" marker-end="url(#arrow)"/>
+  <path d="M90,480 L90,492" stroke="#6B7A88" stroke-width="1.8" fill="none" marker-end="url(#arrow)"/>
+</svg>

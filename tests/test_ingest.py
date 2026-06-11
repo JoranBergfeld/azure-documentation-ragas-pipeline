@@ -1,14 +1,6 @@
 import re
 
-from ragpipe.ingest import build_documents, html_to_text, prune_stale_documents
-
-
-def test_html_to_text_strips_tags_and_scripts():
-    html = "<html><head><script>x=1</script></head><body><h1>Hi</h1><p>Body</p></body></html>"
-    text = html_to_text(html)
-    assert "Hi" in text
-    assert "Body" in text
-    assert "x=1" not in text
+from ragpipe.ingest import build_documents, prune_stale_documents
 
 
 def _fake_batch_embed(texts):
@@ -16,33 +8,52 @@ def _fake_batch_embed(texts):
     return [[float(len(t) % 7), 0.1] for t in texts]
 
 
-def test_build_documents_chunks_and_embeds():
-    pages = [{"url": "http://x", "title": "T", "text": "word " * 600}]
+def _no_context(document: str, chunk: str) -> str:
+    return ""
+
+
+def test_build_documents_chunks_embeds_and_decorates():
+    pages = [{"url": "http://x", "title": "T", "markdown": "# H\n\n" + "word " * 600}]
 
     docs = build_documents(
-        pages, embed_batch_fn=_fake_batch_embed, max_chars=1000, overlap=100, batch_size=2
+        pages,
+        embed_batch_fn=_fake_batch_embed,
+        context_fn=lambda doc, chunk: "generated ctx",
+        max_chars=1000,
+        overlap=100,
+        batch_size=2,
     )
 
     assert len(docs) >= 2
     first = docs[0]
-    # id must be a valid Azure AI Search key: ^[A-Za-z0-9_\-=]+$
     assert re.fullmatch(r"[A-Za-z0-9_\-=]+", first["id"])
-    # deterministic: same url+index always yields the same id
     again = build_documents(
-        pages, embed_batch_fn=_fake_batch_embed, max_chars=1000, overlap=100, batch_size=2
+        pages,
+        embed_batch_fn=_fake_batch_embed,
+        context_fn=lambda doc, chunk: "generated ctx",
+        max_chars=1000,
+        overlap=100,
+        batch_size=2,
     )
     assert again[0]["id"] == first["id"]
-    # distinct chunks get distinct ids
     assert docs[0]["id"] != docs[1]["id"]
     assert first["title"] == "T"
-    assert first["url"] == "http://x"
-    assert "content" in first
+    # ADR-0003: content stays clean; decoration lives in `context`
+    assert "generated ctx" not in first["content"]
+    assert first["context"] == "T > H\ngenerated ctx"
     assert len(first["content_vector"]) == 2
 
 
-def test_build_documents_preserves_chunk_order_across_batches():
-    # 5 chunks with batch_size 2 spans 3 batches; vectors must line up with chunks.
-    pages = [{"url": "http://x", "title": "T", "text": "word " * 1500}]
+def test_build_documents_breadcrumb_only_on_empty_context():
+    pages = [{"url": "http://x", "title": "T", "markdown": "# H\n\nbody text"}]
+    docs = build_documents(
+        pages, embed_batch_fn=_fake_batch_embed, context_fn=_no_context
+    )
+    assert docs[0]["context"] == "T > H"
+
+
+def test_build_documents_embeds_decorated_text_in_chunk_order():
+    pages = [{"url": "http://x", "title": "T", "markdown": "# H\n\n" + "word " * 1500}]
     seen = []
 
     def batch(texts):
@@ -50,10 +61,11 @@ def test_build_documents_preserves_chunk_order_across_batches():
         return [[float(i), 0.0] for i, _ in enumerate(texts)]
 
     docs = build_documents(
-        pages, embed_batch_fn=batch, max_chars=500, overlap=50, batch_size=2
+        pages, embed_batch_fn=batch, context_fn=_no_context,
+        max_chars=500, overlap=50, batch_size=2,
     )
-    # every chunk's content was embedded exactly once, in order
-    assert [d["content"] for d in docs] == seen
+    # the EMBEDDED text is context + "\n\n" + content (ADR-0003)
+    assert [f"{d['context']}\n\n{d['content']}" for d in docs] == seen
     assert len(docs) >= 3
 
 

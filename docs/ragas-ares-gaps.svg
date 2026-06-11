@@ -1,0 +1,122 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1180 860" font-family="-apple-system, Segoe UI, Helvetica, Arial, sans-serif">
+  <rect x="0" y="0" width="1180" height="860" rx="14" fill="#FFFFFF"/>
+
+  <text x="32" y="34" font-size="22" font-weight="700" fill="#1B2733">The gaps RAGAS and ARES fill</text>
+  <text x="32" y="52" font-size="13" fill="#5B6B7B">each evaluation concern mapped to what the two frameworks actually provide</text>
+
+  <!-- ===== column headers ===== -->
+  <rect x="24" y="70" width="330" height="40" rx="8" fill="#EEF2F6" stroke="#9AA8B5" stroke-width="1.5"/>
+  <text x="189" y="95" text-anchor="middle" font-size="14" font-weight="700" fill="#1B2733">concern / gap</text>
+
+  <rect x="366" y="70" width="390" height="40" rx="8" fill="#E0F2F1" stroke="#178A7E" stroke-width="1.5"/>
+  <text x="561" y="88" text-anchor="middle" font-size="14" font-weight="700" fill="#0E5F57">RAGAS</text>
+  <text x="561" y="103" text-anchor="middle" font-size="10.5" fill="#0E5F57">reference-free LLM-judged metrics</text>
+
+  <rect x="768" y="70" width="388" height="40" rx="8" fill="#EDEAFB" stroke="#5B4FC4" stroke-width="1.5"/>
+  <text x="962" y="88" text-anchor="middle" font-size="14" font-weight="700" fill="#3A3190">ARES</text>
+  <text x="962" y="103" text-anchor="middle" font-size="10.5" fill="#3A3190">fine-tuned judges + statistical calibration</text>
+
+  <!-- ===== row 1: hallucination ===== -->
+  <rect x="24" y="122" width="330" height="92" rx="8" fill="#FDECEA" stroke="#D64545" stroke-width="1.2"/>
+  <text x="40" y="148" font-size="12.5" font-weight="600" fill="#A93226">hallucination</text>
+  <text x="40" y="168" font-size="10.5" fill="#7B4A44">answers not grounded in the</text>
+  <text x="40" y="182" font-size="10.5" fill="#7B4A44">retrieved context</text>
+
+  <rect x="366" y="122" width="390" height="92" rx="8" fill="#F0FAF9" stroke="#9ED2CC" stroke-width="1.2"/>
+  <text x="382" y="148" font-size="12" font-weight="600" fill="#0E5F57">faithfulness</text>
+  <text x="382" y="168" font-size="10.5" fill="#43615E">decomposes the answer into claims and</text>
+  <text x="382" y="182" font-size="10.5" fill="#43615E">verifies each claim against the retrieved context</text>
+
+  <rect x="768" y="122" width="388" height="92" rx="8" fill="#F4F2FC" stroke="#B5AEE4" stroke-width="1.2"/>
+  <text x="784" y="148" font-size="12" font-weight="600" fill="#3A3190">answer faithfulness judge</text>
+  <text x="784" y="168" font-size="10.5" fill="#4F4A6E">a fine-tuned classifier scores grounding of</text>
+  <text x="784" y="182" font-size="10.5" fill="#4F4A6E">every response — cheap at inference time</text>
+
+  <!-- ===== row 2: retrieval quality ===== -->
+  <rect x="24" y="226" width="330" height="92" rx="8" fill="#FDECEA" stroke="#D64545" stroke-width="1.2"/>
+  <text x="40" y="252" font-size="12.5" font-weight="600" fill="#A93226">retrieval quality</text>
+  <text x="40" y="272" font-size="10.5" fill="#7B4A44">are the right chunks even fetched,</text>
+  <text x="40" y="286" font-size="10.5" fill="#7B4A44">and ranked above the noise?</text>
+
+  <rect x="366" y="226" width="390" height="92" rx="8" fill="#F0FAF9" stroke="#9ED2CC" stroke-width="1.2"/>
+  <text x="382" y="252" font-size="12" font-weight="600" fill="#0E5F57">context precision &amp; context recall</text>
+  <text x="382" y="272" font-size="10.5" fill="#43615E">scores the retriever on its own, independent of</text>
+  <text x="382" y="286" font-size="10.5" fill="#43615E">the generator — pinpoints *which* stage broke</text>
+
+  <rect x="768" y="226" width="388" height="92" rx="8" fill="#F4F2FC" stroke="#B5AEE4" stroke-width="1.2"/>
+  <text x="784" y="252" font-size="12" font-weight="600" fill="#3A3190">context relevance judge</text>
+  <text x="784" y="272" font-size="10.5" fill="#4F4A6E">rates each retrieved passage against the query,</text>
+  <text x="784" y="286" font-size="10.5" fill="#4F4A6E">passage by passage</text>
+
+  <!-- ===== row 3: relevance ===== -->
+  <rect x="24" y="330" width="330" height="92" rx="8" fill="#FDECEA" stroke="#D64545" stroke-width="1.2"/>
+  <text x="40" y="356" font-size="12.5" font-weight="600" fill="#A93226">off-topic answers</text>
+  <text x="40" y="376" font-size="10.5" fill="#7B4A44">fluent answers that simply don’t</text>
+  <text x="40" y="390" font-size="10.5" fill="#7B4A44">address the question asked</text>
+
+  <rect x="366" y="330" width="390" height="92" rx="8" fill="#F0FAF9" stroke="#9ED2CC" stroke-width="1.2"/>
+  <text x="382" y="356" font-size="12" font-weight="600" fill="#0E5F57">answer relevancy</text>
+  <text x="382" y="376" font-size="10.5" fill="#43615E">regenerates plausible questions from the answer</text>
+  <text x="382" y="390" font-size="10.5" fill="#43615E">and compares them to the original question</text>
+
+  <rect x="768" y="330" width="388" height="92" rx="8" fill="#F4F2FC" stroke="#B5AEE4" stroke-width="1.2"/>
+  <text x="784" y="356" font-size="12" font-weight="600" fill="#3A3190">answer relevance judge</text>
+  <text x="784" y="376" font-size="10.5" fill="#4F4A6E">scores whether the response actually addresses</text>
+  <text x="784" y="390" font-size="10.5" fill="#4F4A6E">the query</text>
+
+  <!-- ===== row 4: no labeled data ===== -->
+  <rect x="24" y="434" width="330" height="92" rx="8" fill="#FDECEA" stroke="#D64545" stroke-width="1.2"/>
+  <text x="40" y="460" font-size="12.5" font-weight="600" fill="#A93226">no labeled dataset</text>
+  <text x="40" y="480" font-size="10.5" fill="#7B4A44">most domains have no ground-truth</text>
+  <text x="40" y="494" font-size="10.5" fill="#7B4A44">Q&amp;A pairs to grade against</text>
+
+  <rect x="366" y="434" width="390" height="92" rx="8" fill="#F0FAF9" stroke="#9ED2CC" stroke-width="1.2"/>
+  <text x="382" y="460" font-size="12" font-weight="600" fill="#0E5F57">reference-free metrics + synthetic test sets</text>
+  <text x="382" y="480" font-size="10.5" fill="#43615E">core metrics need only (question, context, answer);</text>
+  <text x="382" y="494" font-size="10.5" fill="#43615E">test-set generation builds eval items from your docs</text>
+
+  <rect x="768" y="434" width="388" height="92" rx="8" fill="#F4F2FC" stroke="#B5AEE4" stroke-width="1.2"/>
+  <text x="784" y="460" font-size="12" font-weight="600" fill="#3A3190">synthetic judge training data</text>
+  <text x="784" y="480" font-size="10.5" fill="#4F4A6E">generates positive/negative training examples</text>
+  <text x="784" y="494" font-size="10.5" fill="#4F4A6E">from your own corpus to train its judges</text>
+
+  <!-- ===== row 5: trusting the scores ===== -->
+  <rect x="24" y="538" width="330" height="92" rx="8" fill="#FDECEA" stroke="#D64545" stroke-width="1.2"/>
+  <text x="40" y="564" font-size="12.5" font-weight="600" fill="#A93226">can we trust the scores?</text>
+  <text x="40" y="584" font-size="10.5" fill="#7B4A44">LLM judges are themselves noisy,</text>
+  <text x="40" y="598" font-size="10.5" fill="#7B4A44">biased, and unverified</text>
+
+  <rect x="366" y="538" width="390" height="92" rx="8" fill="#F0FAF9" stroke="#9ED2CC" stroke-width="1.2"/>
+  <text x="382" y="564" font-size="12" font-weight="600" fill="#0E5F57">prompted LLM-as-judge</text>
+  <text x="382" y="584" font-size="10.5" fill="#43615E">fast and indicative, but uncalibrated — scores are</text>
+  <text x="382" y="598" font-size="10.5" fill="#43615E">point estimates with no error bars</text>
+
+  <rect x="768" y="538" width="388" height="92" rx="8" fill="#F4F2FC" stroke="#B5AEE4" stroke-width="1.2"/>
+  <text x="784" y="564" font-size="12" font-weight="600" fill="#3A3190">PPI — prediction-powered inference</text>
+  <text x="784" y="584" font-size="10.5" fill="#4F4A6E">~150–300 human labels calibrate the judges and</text>
+  <text x="784" y="598" font-size="10.5" fill="#4F4A6E">yield statistical confidence intervals on every score</text>
+
+  <!-- ===== row 6: iteration cost ===== -->
+  <rect x="24" y="642" width="330" height="92" rx="8" fill="#FDECEA" stroke="#D64545" stroke-width="1.2"/>
+  <text x="40" y="668" font-size="12.5" font-weight="600" fill="#A93226">iteration cost</text>
+  <text x="40" y="688" font-size="10.5" fill="#7B4A44">every config change needs a re-run —</text>
+  <text x="40" y="702" font-size="10.5" fill="#7B4A44">evaluation must stay fast and cheap</text>
+
+  <rect x="366" y="642" width="390" height="92" rx="8" fill="#F0FAF9" stroke="#9ED2CC" stroke-width="1.2"/>
+  <text x="382" y="668" font-size="12" font-weight="600" fill="#0E5F57">inner loop</text>
+  <text x="382" y="688" font-size="10.5" fill="#43615E">cheap per run, no training step — fits CI and</text>
+  <text x="382" y="702" font-size="10.5" fill="#43615E">per-change regression checks while iterating</text>
+
+  <rect x="768" y="642" width="388" height="92" rx="8" fill="#F4F2FC" stroke="#B5AEE4" stroke-width="1.2"/>
+  <text x="784" y="668" font-size="12" font-weight="600" fill="#3A3190">outer loop</text>
+  <text x="784" y="688" font-size="10.5" fill="#4F4A6E">one-time judge-training setup, then cheap scoring —</text>
+  <text x="784" y="702" font-size="10.5" fill="#4F4A6E">built for rigorous A/B ranking of whole systems</text>
+
+  <!-- ===== better together ===== -->
+  <rect x="24" y="752" width="1132" height="68" rx="12" fill="#F3FAF4" stroke="#CDE9D2"/>
+  <text x="40" y="774" font-size="13" font-weight="700" fill="#2E7D43">better together</text>
+  <text x="40" y="794" font-size="11.5" fill="#43615E">RAGAS gives a fast, label-light signal on every change while you iterate · ARES gives calibrated scores with confidence intervals when you need to trust a comparison</text>
+  <text x="40" y="810" font-size="11.5" fill="#43615E">— same three concerns (grounding, retrieval, relevance), different rigor/cost trade-off</text>
+
+  <text x="32" y="844" font-size="10.5" fill="#9AA8B5">ragas-ares-gaps — companion: why-rag-evaluation</text>
+</svg>

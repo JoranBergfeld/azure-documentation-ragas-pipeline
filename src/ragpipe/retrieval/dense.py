@@ -23,7 +23,7 @@ class DenseRetriever:
     def retrieve(self, query: str) -> list[Chunk]:
         vector = self._embed(query)
         vq = VectorizedQuery(
-            vector=vector, k_nearest_neighbors=self._top_k, fields="content_vector"
+            vector=vector, k=self._top_k, fields="content_vector"  # azure-search-documents 11.7 names this k; k_nearest_neighbors is silently ignored.
         )
         results = self._client.search(
             search_text=None,

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import sys
 from dataclasses import dataclass
 from typing import Callable
 
@@ -10,9 +11,16 @@ from ragpipe.retrieval.rrf import reciprocal_rank_fusion
 # Callable stage signatures (sync or async tolerated via _maybe_await).
 DenseFn = Callable[[str], list[Chunk]]
 Bm25Fn = Callable[[str], list[Chunk]]
-RerankFn = Callable[[str, list[Chunk]], list[Chunk]]
-GenerateFn = Callable[[str, list[Chunk]], object]
+RerankFn = Callable[[str, list[Chunk], int], list[Chunk]]
+GenerateFn = Callable[[str, list[Chunk], str | None], object]
 ScoreFn = Callable[[str, str, list[Chunk]], object]
+
+# Returned verbatim when the guardrail exhausts: the directive abstention
+# (ADR-0009). Consumers get this text instead of the unfaithful answer.
+ABSTENTION_ANSWER = (
+    "I don't have enough grounded information in the indexed documentation "
+    "to answer this question reliably."
+)
 
 
 async def _maybe_await(value):
@@ -31,6 +39,10 @@ class PipelineDeps:
     threshold: float = 0.7
     max_retries: int = 2
     rrf_k: int = 60
+    top_k: int = 5
+    # Each retry widens the rerank window by this many chunks: the most common
+    # faithfulness failure is the needed chunk sitting just below the cut.
+    rerank_widen_step: int = 3
 
 
 async def run_pipeline(query: str, deps: PipelineDeps) -> PipelineState:
@@ -41,19 +53,34 @@ async def run_pipeline(query: str, deps: PipelineDeps) -> PipelineState:
     state.bm25 = await _maybe_await(deps.bm25(query))
     state.add_trace("bm25", {"ids": [c.id for c in state.bm25]})
 
+    # Retrieval legs and fusion are fixed across attempts — compute once.
+    state.fused = reciprocal_rank_fusion(state.dense, state.bm25, k=deps.rrf_k)
+    state.add_trace("rrf", {"ids": [c.id for c in state.fused]})
+
+    previous_answer: str | None = None
     while True:
-        state.fused = reciprocal_rank_fusion(state.dense, state.bm25, k=deps.rrf_k)
-        state.add_trace("rrf", {"ids": [c.id for c in state.fused]})
+        k = deps.top_k + deps.rerank_widen_step * state.attempt
+        state.reranked = await _maybe_await(deps.rerank(query, state.fused, k))
+        state.add_trace(
+            "rerank", {"ids": [c.id for c in state.reranked], "top_k": k}
+        )
 
-        state.reranked = await _maybe_await(deps.rerank(query, state.fused))
-        state.add_trace("rerank", {"ids": [c.id for c in state.reranked]})
-
-        state.answer = await _maybe_await(deps.generate(query, state.reranked))
+        state.answer = await _maybe_await(
+            deps.generate(query, state.reranked, previous_answer)
+        )
         state.add_trace("generate", {"answer": state.answer})
+        previous_answer = state.answer
 
         try:
             score = await _maybe_await(deps.score(query, state.answer, state.reranked))
-        except Exception:  # judge failure -> fail-closed
+        except Exception as exc:  # judge failure -> fail-closed
+            # Logged so operators can tell an outage from a scorer bug; the
+            # decision path is identical either way (abstain immediately).
+            print(
+                f"guardrail: scorer failed: {type(exc).__name__}: {exc}",
+                file=sys.stderr,
+                flush=True,
+            )
             score = None
         state.faithfulness = score
         state.add_trace("faithfulness", {"score": score, "attempt": state.attempt})
@@ -68,6 +95,11 @@ async def run_pipeline(query: str, deps: PipelineDeps) -> PipelineState:
             return state
         if decision is LoopDecision.EXHAUSTED:
             state.low_confidence = True
+            state.abstained = True
+            state.add_trace(
+                "abstain", {"suppressed_answer": state.answer, "score": score}
+            )
+            state.answer = ABSTENTION_ANSWER
             return state
         state.next_attempt()  # RETRY
 
@@ -120,6 +152,8 @@ def build_viz_workflow():
     builder.add_edge(rrf, rerank)
     builder.add_edge(rerank, generate)
     builder.add_edge(generate, faithfulness)
-    builder.add_edge(faithfulness, rrf, condition=low_faithfulness)
+    # Retries re-enter at rerank (widened window over the fixed fused set),
+    # not at rrf — retrieval + fusion run once per query (ADR-0009).
+    builder.add_edge(faithfulness, rerank, condition=low_faithfulness)
     builder.add_edge(faithfulness, answer)
     return builder.build()

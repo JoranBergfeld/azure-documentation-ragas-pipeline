@@ -17,6 +17,10 @@ dependencies = [
     "beautifulsoup4",
     "fastapi",
     "uvicorn[standard]",
+    "rapidfuzz",
+    "markdownify>=1.2.2",
+    "langchain-anthropic>=1.4.4",
+    "anthropic>=0.109.1",
 ]
 
 [dependency-groups]

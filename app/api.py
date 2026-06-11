@@ -53,6 +53,7 @@ async def run(
         "faithfulness": state.faithfulness,
         "attempt": state.attempt,
         "lowConfidence": state.low_confidence,
+        "abstained": state.abstained,
         "stages": stage_chunk_tables(state),
     }
 

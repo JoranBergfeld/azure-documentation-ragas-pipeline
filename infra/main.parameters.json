@@ -2,10 +2,10 @@
   "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
   "contentVersion": "1.0.0.0",
   "parameters": {
-    "location": { "value": "switzerlandnorth" },
-    "baseName": { "value": "ragpipe" },
-    "chatModel": { "value": "gpt-4o" },
-    "embeddingModel": { "value": "text-embedding-3-small" },
+    "location": { "value": "${AZURE_LOCATION=swedencentral}" },
+    "baseName": { "value": "${RAGPIPE_BASE_NAME=ragpipe}" },
+    "judgeModel": { "value": "${JUDGE_MODEL}" },
+    "offlineJudgeModel": { "value": "${OFFLINE_JUDGE_MODEL}" },
     "principalId": { "value": "${AZURE_PRINCIPAL_ID}" },
     "principalType": { "value": "${AZURE_PRINCIPAL_TYPE=User}" }
   }

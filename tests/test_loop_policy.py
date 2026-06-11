@@ -16,7 +16,8 @@ def test_exhausted_when_below_threshold_and_no_attempts_left():
     assert d is LoopDecision.EXHAUSTED
 
 
-def test_failed_score_none_treated_as_below_threshold():
-    # fail-closed: a missing score must not pass the guardrail
-    assert decide_next(score=None, threshold=0.7, attempt=0, max_retries=2) is LoopDecision.RETRY
+def test_judge_failure_exhausts_immediately():
+    # fail-closed AND fail-fast: regeneration cannot fix judge infrastructure,
+    # so a missing score abstains without burning generator/rerank retries.
+    assert decide_next(score=None, threshold=0.7, attempt=0, max_retries=2) is LoopDecision.EXHAUSTED
     assert decide_next(score=None, threshold=0.7, attempt=2, max_retries=2) is LoopDecision.EXHAUSTED

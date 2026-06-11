@@ -5,11 +5,21 @@ Agent Framework + Azure AI Foundry + Azure AI Search, evaluated with RAGAS.
 
 ![RAGAS-infused RAG pipeline — architecture](docs/pipeline.svg)
 
-The whole flow: **① Ingest** crawls Microsoft Learn and builds the Azure AI Search
-index; **② Query pipeline** runs hybrid retrieval (dense + BM25) → RRF fusion →
-Azure semantic rerank → Foundry generator agent, with a RAGAS faithfulness guardrail
-that retries on weak grounding; **③ Evaluation** replays the pipeline over a test set
-and scores it with RAGAS. (Source: [`docs/pipeline.svg`](docs/pipeline.svg); the live
+The whole flow: **① Ingest** crawls Microsoft Learn, extracts main content as
+markdown (code/tables preserved), splits on headings, decorates every chunk with a
+breadcrumb + cached LLM situating context (visible to retrieval only — see
+`docs/adr/`), and indexes it in Azure AI Search; **② Query pipeline** runs hybrid
+retrieval (dense + BM25) → RRF fusion → Azure semantic rerank (hybrid, so
+dense-only candidates survive) → Foundry generator agent, with a directive RAGAS
+faithfulness guardrail judged by Claude (ADR-0009) that widens retrieval and
+regenerates with corrective feedback on weak grounding, and abstains when
+retries exhaust;
+**③ Evaluation** replays the pipeline over a tagged test set and scores it with
+deterministic per-stage retrieval metrics (hit rate / MRR) plus the RAGAS suite,
+comparing against a frozen baseline.
+
+Per-phase deep dives: [① Ingest](docs/pipeline-ingest.svg) ·
+[② Query pipeline](docs/pipeline-query.svg) · [③ Evaluation](docs/pipeline-eval.svg). (Source: [`docs/pipeline.svg`](docs/pipeline.svg); the live
 runtime workflow graph is also rendered in the dashboard's Architecture tab from
 [`docs/pipeline.mmd`](docs/pipeline.mmd).) See the design spec in `docs/superpowers/specs/`.
 
@@ -41,7 +51,8 @@ sitemaps. To (re)build or resize it, then index it:
 
 ```bash
 uv run python scripts/build_corpus.py [per_service] [cap]   # default 4/service, cap 1000 → ~580 URLs
-uv run python -m ragpipe.ingest                             # fetch → chunk → embed → upload to Search
+uv run python -m ragpipe.ingest                             # fetch → extract → chunk → decorate → embed → upload
+uv run python -m ragpipe.ingest 3                           # smoke run: first 3 pages, pruning skipped
 ```
 
 `azd up` runs ingestion automatically; run these manually to refresh the corpus later.
@@ -61,8 +72,8 @@ pipeline and the dashboard's pure helper functions.
 uv run uvicorn app.api:app --host 0.0.0.0 --port 8000
 ```
 
-- `POST /run` `{"query": "..."}` → answer, faithfulness, attempt, lowConfidence, and
-  per-stage chunk tables (`stages.{dense,bm25,fused,reranked}`).
+- `POST /run` `{"query": "..."}` → answer, faithfulness, attempt, lowConfidence,
+  abstained, and per-stage chunk tables (`stages.{dense,bm25,fused,reranked}`).
 - `GET /eval` → RAGAS metrics from `eval_results.json` (`overall`, `perStage`, `nRecords`).
 - `GET /health` → `{"status":"ok"}`.
 
@@ -82,23 +93,40 @@ PER_STAGE_METRICS=true uv run python -m ragpipe.eval.run
 
 Set `TESTSET_MODE=synthetic` in `.env` to generate the test set from the corpus instead.
 
+Before the first eval run on a new machine:
+`uv run python scripts/verify_judges.py` (smokes all three model routes + the
+decoration call before any paid run).
+
+Generate synthetic test-item candidates from pages you name (Claude-authored,
+overlap-screened; see `docs/adr/0010`):
+
+```bash
+uv run python scripts/generate_synthetic_testset.py https://learn.microsoft.com/en-us/azure/search/semantic-search-overview --per-page 5
+```
+
 ## Test
 
 ```bash
 uv run pytest -q
 ```
 
-## Supported regions
+## Supported regions & models
 
-Provisioning is restricted (in `infra/main.bicep`) to regions where `gpt-4o`,
-`text-embedding-3-small`, and Azure AI Search (with semantic ranker) are all
-available on the Standard deployment type: **switzerlandnorth** (default), westus,
-japaneast, australiaeast, uaenorth, canadaeast, eastus, eastus2. (The US regions
-eastus/eastus2 are frequently capacity-constrained for Foundry; switzerlandnorth
-is the default to avoid that and keep EU data residency.)
+Default region is **swedencentral** (see `docs/adr/0008`): it is one of only two
+regions (with `eastus2`) where Anthropic Claude models deploy in Microsoft Foundry,
+and `gpt-5.4` + `text-embedding-3-small` are available there via
+GlobalStandard/DataZone deployments. The Bicep deploys:
 
-`text-embedding-3-small` is not offered in most EU regions — `switzerlandnorth` is
-the only EU option here. If you need another EU region, switch
-`FOUNDRY_EMBEDDING_MODEL` (and the Bicep `embeddingModel` default) to
-`text-embedding-3-large`, which is available in `swedencentral`, `francecentral`,
-`norwayeast`, `uksouth`, and more.
+- `gpt-5.4` (2026-03-05, GlobalStandard) — generator agent
+- `text-embedding-3-small` (GlobalStandard — regional Standard is NOT offered in
+  swedencentral; that limitation is what previously forced switzerlandnorth)
+- `claude-sonnet-4-6` (preview, GlobalStandard, marketplace-billed) — judges the
+  online faithfulness gate (`JUDGE_MODEL`, ADR-0009); requires Azure Marketplace
+  access on a pay-as-you-go subscription, and the first deployment may need a
+  one-time marketplace offer acceptance in the portal
+- `DeepSeek-V4-Pro` (preview, GlobalStandard, sold directly by Azure) — offline
+  RAGAS judge (`OFFLINE_JUDGE_MODEL`); third family so offline scores are
+  independent of both the generator and the gate (ADR-0009)
+
+Other allowed regions (`infra/main.bicep` `@allowed`) work for the OpenAI-only
+stack, but Claude deploys only from swedencentral/eastus2.

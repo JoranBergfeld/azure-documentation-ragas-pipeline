@@ -1,0 +1,126 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1180 660" font-family="-apple-system, Segoe UI, Helvetica, Arial, sans-serif">
+  <defs>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="userSpaceOnUse">
+      <path d="M0,0 L8,3 L0,6 Z" fill="#6B7A88"/>
+    </marker>
+    <marker id="arrowAz" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="userSpaceOnUse">
+      <path d="M0,0 L8,3 L0,6 Z" fill="#0078D4"/>
+    </marker>
+  </defs>
+  <rect x="0" y="0" width="1180" height="660" rx="14" fill="#FFFFFF"/>
+
+  <text x="32" y="34" font-size="22" font-weight="700" fill="#1B2733">① Ingest — in detail</text>
+  <text x="32" y="52" font-size="13" fill="#5B6B7B">crawl → extract → chunk → decorate → embed → upload &amp; reconcile  (uv run python -m ragpipe.ingest [N])</text>
+
+  <!-- ===== Stage 1: corpus selection ===== -->
+  <rect x="24" y="66" width="1132" height="104" rx="12" fill="#F5F8FB" stroke="#D6E4F0"/>
+  <text x="40" y="88" font-size="13" font-weight="700" fill="#5B6B7B">1 · Corpus selection — scripts/build_corpus.py (offline, infrequent)</text>
+  <g>
+    <rect x="40" y="102" width="230" height="52" rx="8" fill="#EEF2F6" stroke="#9AA8B5" stroke-width="1.5"/>
+    <text x="155" y="123" text-anchor="middle" font-size="12.5" font-weight="600" fill="#1B2733">MS Learn sitemap index</text>
+    <text x="155" y="138" text-anchor="middle" font-size="10.5" fill="#5B6B7B">azure*_en-us_N.xml shards</text>
+  </g>
+  <g>
+    <rect x="310" y="102" width="290" height="52" rx="8" fill="#EEF2F6" stroke="#9AA8B5" stroke-width="1.5"/>
+    <text x="455" y="123" text-anchor="middle" font-size="12.5" font-weight="600" fill="#1B2733">select_urls</text>
+    <text x="455" y="138" text-anchor="middle" font-size="10.5" fill="#5B6B7B">prefer overview/concepts · 4/service · cap 1000</text>
+  </g>
+  <g>
+    <rect x="640" y="102" width="200" height="52" rx="8" fill="#FFF6E6" stroke="#E3B341" stroke-width="1.5"/>
+    <text x="740" y="123" text-anchor="middle" font-size="12.5" font-weight="600" fill="#1B2733">corpus_sources.yaml</text>
+    <text x="740" y="138" text-anchor="middle" font-size="10.5" fill="#5B6B7B">~580 URLs, ~199 services</text>
+  </g>
+  <text x="880" y="132" font-size="10.5" fill="#5B6B7B">frozen between baseline and post-change runs (ADR-0006)</text>
+  <path d="M270,128 L306,128" stroke="#6B7A88" stroke-width="1.6" fill="none" marker-end="url(#arrow)"/>
+  <path d="M600,128 L636,128" stroke="#6B7A88" stroke-width="1.6" fill="none" marker-end="url(#arrow)"/>
+
+  <!-- ===== Stage 2: fetch & structure ===== -->
+  <rect x="24" y="186" width="1132" height="104" rx="12" fill="#F5F8FB" stroke="#D6E4F0"/>
+  <text x="40" y="208" font-size="13" font-weight="700" fill="#5B6B7B">2 · Fetch &amp; structure — per page (ADR-0004)</text>
+  <g>
+    <rect x="40" y="222" width="230" height="52" rx="8" fill="#EEF2F6" stroke="#9AA8B5" stroke-width="1.5"/>
+    <text x="155" y="243" text-anchor="middle" font-size="12.5" font-weight="600" fill="#1B2733">fetch_pages</text>
+    <text x="155" y="258" text-anchor="middle" font-size="10.5" fill="#5B6B7B">httpx · 6 workers · 429 backoff</text>
+  </g>
+  <g>
+    <rect x="310" y="222" width="290" height="52" rx="8" fill="#EEF2F6" stroke="#9AA8B5" stroke-width="1.5"/>
+    <text x="455" y="243" text-anchor="middle" font-size="12.5" font-weight="600" fill="#1B2733">html_to_markdown</text>
+    <text x="455" y="258" text-anchor="middle" font-size="10.5" fill="#5B6B7B">&lt;main&gt; → markdown · code + tables kept</text>
+  </g>
+  <g>
+    <rect x="640" y="222" width="290" height="52" rx="8" fill="#EEF2F6" stroke="#9AA8B5" stroke-width="1.5"/>
+    <text x="785" y="243" text-anchor="middle" font-size="12.5" font-weight="600" fill="#1B2733">chunk_markdown</text>
+    <text x="785" y="258" text-anchor="middle" font-size="10.5" fill="#5B6B7B">heading splits · 2000 chars / 200 overlap</text>
+  </g>
+  <g>
+    <rect x="970" y="222" width="186" height="52" rx="8" fill="#FFF6E6" stroke="#E3B341" stroke-width="1.5"/>
+    <text x="1063" y="243" text-anchor="middle" font-size="12.5" font-weight="600" fill="#1B2733">MarkdownChunk</text>
+    <text x="1063" y="258" text-anchor="middle" font-size="10.5" fill="#5B6B7B">text + breadcrumb</text>
+  </g>
+  <path d="M270,248 L306,248" stroke="#6B7A88" stroke-width="1.6" fill="none" marker-end="url(#arrow)"/>
+  <path d="M600,248 L636,248" stroke="#6B7A88" stroke-width="1.6" fill="none" marker-end="url(#arrow)"/>
+  <path d="M930,248 L966,248" stroke="#6B7A88" stroke-width="1.6" fill="none" marker-end="url(#arrow)"/>
+
+  <!-- ===== Stage 3: decorate & embed ===== -->
+  <rect x="24" y="306" width="1132" height="158" rx="12" fill="#F5F8FB" stroke="#D6E4F0"/>
+  <text x="40" y="328" font-size="13" font-weight="700" fill="#5B6B7B">3 · Decorate &amp; embed — per chunk (ADR-0001 / 0005)</text>
+  <g>
+    <rect x="40" y="342" width="270" height="52" rx="8" fill="#E3F0FB" stroke="#0078D4" stroke-width="1.5"/>
+    <text x="175" y="363" text-anchor="middle" font-size="12.5" font-weight="600" fill="#1B2733">ContextGenerator</text>
+    <text x="175" y="378" text-anchor="middle" font-size="10.5" fill="#5B6B7B">full page + chunk → chat model · temp 0</text>
+  </g>
+  <g>
+    <rect x="40" y="408" width="270" height="40" rx="8" fill="#FFFFFF" stroke="#9AA8B5" stroke-width="1.2" stroke-dasharray="5 4"/>
+    <text x="175" y="425" text-anchor="middle" font-size="11.5" font-weight="600" fill="#1B2733">.context_cache.json</text>
+    <text x="175" y="439" text-anchor="middle" font-size="10" fill="#5B6B7B">sha256(version + page + chunk)</text>
+  </g>
+  <path d="M160,394 L160,404" stroke="#6B7A88" stroke-width="1.4" fill="none" marker-end="url(#arrow)"/>
+  <path d="M190,404 L190,394" stroke="#6B7A88" stroke-width="1.4" fill="none" marker-end="url(#arrow)"/>
+  <g>
+    <rect x="350" y="342" width="280" height="52" rx="8" fill="#EEF2F6" stroke="#9AA8B5" stroke-width="1.5"/>
+    <text x="490" y="363" text-anchor="middle" font-size="12.5" font-weight="600" fill="#1B2733">context field assembly</text>
+    <text x="490" y="378" text-anchor="middle" font-size="10.5" fill="#5B6B7B">breadcrumb + sentence · fallback: breadcrumb only</text>
+  </g>
+  <g>
+    <rect x="670" y="342" width="290" height="52" rx="8" fill="#E3F0FB" stroke="#0078D4" stroke-width="1.5"/>
+    <text x="815" y="363" text-anchor="middle" font-size="12.5" font-weight="600" fill="#1B2733">text-embedding-3-small</text>
+    <text x="815" y="378" text-anchor="middle" font-size="10.5" fill="#5B6B7B">batch 64 · input = context + content</text>
+  </g>
+  <g>
+    <rect x="1000" y="342" width="156" height="52" rx="8" fill="#FFF6E6" stroke="#E3B341" stroke-width="1.5"/>
+    <text x="1078" y="363" text-anchor="middle" font-size="12.5" font-weight="600" fill="#1B2733">1536-d vector</text>
+    <text x="1078" y="378" text-anchor="middle" font-size="10.5" fill="#5B6B7B">content_vector</text>
+  </g>
+  <path d="M310,368 L346,368" stroke="#6B7A88" stroke-width="1.6" fill="none" marker-end="url(#arrow)"/>
+  <path d="M630,368 L666,368" stroke="#6B7A88" stroke-width="1.6" fill="none" marker-end="url(#arrow)"/>
+  <path d="M960,368 L996,368" stroke="#6B7A88" stroke-width="1.6" fill="none" marker-end="url(#arrow)"/>
+  <text x="660" y="440" font-size="10.5" fill="#5B6B7B">the generator and faithfulness judge never see the context field — retrieval-only decoration (ADR-0003)</text>
+
+  <!-- ===== Stage 4: upload & reconcile ===== -->
+  <rect x="24" y="480" width="1132" height="158" rx="12" fill="#F5F8FB" stroke="#D6E4F0"/>
+  <text x="40" y="502" font-size="13" font-weight="700" fill="#5B6B7B">4 · Upload &amp; reconcile (ADR-0007)</text>
+  <g>
+    <rect x="40" y="516" width="270" height="52" rx="8" fill="#EEF2F6" stroke="#9AA8B5" stroke-width="1.5"/>
+    <text x="175" y="537" text-anchor="middle" font-size="12.5" font-weight="600" fill="#1B2733">upload_documents</text>
+    <text x="175" y="552" text-anchor="middle" font-size="10.5" fill="#5B6B7B">batches of 500 · upsert keyed on id</text>
+  </g>
+  <g>
+    <rect x="350" y="516" width="280" height="52" rx="8" fill="#EEF2F6" stroke="#9AA8B5" stroke-width="1.5"/>
+    <text x="490" y="537" text-anchor="middle" font-size="12.5" font-weight="600" fill="#1B2733">prune_stale_documents</text>
+    <text x="490" y="552" text-anchor="middle" font-size="10.5" fill="#5B6B7B">delete ids absent from fresh set · skipped on smoke runs</text>
+  </g>
+  <g>
+    <rect x="670" y="516" width="486" height="52" rx="8" fill="#E3F0FB" stroke="#0078D4" stroke-width="1.5"/>
+    <text x="913" y="537" text-anchor="middle" font-size="12.5" font-weight="600" fill="#1B2733">Azure AI Search index</text>
+    <text x="913" y="552" text-anchor="middle" font-size="10.5" fill="#5B6B7B">content (clean) · context (searchable) · content_vector (HNSW)</text>
+  </g>
+  <path d="M310,542 L346,542" stroke="#6B7A88" stroke-width="1.6" fill="none" marker-end="url(#arrow)"/>
+  <path d="M630,542 L666,542" stroke="#6B7A88" stroke-width="1.6" fill="none" marker-end="url(#arrow)"/>
+  <text x="40" y="596" font-size="10.5" fill="#5B6B7B">index cannot be deleted (Foundry knowledge source binds it) → schema changes are additive via create_or_update; re-chunking shifts ids, prune removes the old set</text>
+  <text x="40" y="612" font-size="10.5" fill="#5B6B7B">first decorated ingest ≈ 2,700 context LLM calls; unchanged corpus re-ingest costs zero (cache)</text>
+
+  <!-- inter-stage arrows -->
+  <path d="M90,172 L90,184" stroke="#6B7A88" stroke-width="1.8" fill="none" marker-end="url(#arrow)"/>
+  <path d="M90,290 L90,302" stroke="#6B7A88" stroke-width="1.8" fill="none" marker-end="url(#arrow)"/>
+  <path d="M90,464 L90,476" stroke="#6B7A88" stroke-width="1.8" fill="none" marker-end="url(#arrow)"/>
+</svg>

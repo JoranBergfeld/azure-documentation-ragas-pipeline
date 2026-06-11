@@ -5,6 +5,7 @@ from dataclasses import dataclass, field
 from statistics import mean
 from typing import Awaitable, Callable
 
+from ragpipe.eval.retrieval_metrics import stage_retrieval_metrics
 from ragpipe.eval.testset import TestItem
 from ragpipe.models import PipelineState
 
@@ -25,6 +26,15 @@ class EvalRecord:
     # Per-stage context text captured during the run (always populated, cheap).
     # Only *evaluated* when the per-stage sweep is enabled.
     stage_contexts: dict[str, list[str]] = field(default_factory=dict)
+    # Per-stage page URLs captured during the run, for deterministic URL-match
+    # metrics (ADR-0002).
+    stage_urls: dict[str, list[str]] = field(default_factory=dict)
+    # Test-item tags (ADR-0006); empty means 'original'.
+    tags: tuple[str, ...] = ()
+    # Directive guardrail outcome (ADR-0009): True when the pipeline abstained.
+    # Mirrored into metrics["abstained"] so aggregate()/aggregate_by_tag()
+    # report the abstention rate alongside every other metric for free.
+    abstained: bool = False
 
 
 PipelineFn = Callable[[str], Awaitable[PipelineState]]
@@ -52,20 +62,28 @@ async def run_harness(
     records: list[EvalRecord] = []
     for item in items:
         state = await pipeline_fn(item.question)
-        records.append(
-            EvalRecord(
-                question=item.question,
-                answer=state.answer,
-                contexts=[c.content for c in state.reranked],
-                ground_truth=item.ground_truth,
-                stage_contexts={
-                    "dense": [c.content for c in state.dense],
-                    "bm25": [c.content for c in state.bm25],
-                    "fused": [c.content for c in state.fused],
-                    "reranked": [c.content for c in state.reranked],
-                },
-            )
+        by_stage = {
+            "dense": state.dense,
+            "bm25": state.bm25,
+            "fused": state.fused,
+            "reranked": state.reranked,
+        }
+        record = EvalRecord(
+            question=item.question,
+            answer=state.answer,
+            contexts=[c.content for c in state.reranked],
+            ground_truth=item.ground_truth,
+            stage_contexts={s: [c.content for c in cs] for s, cs in by_stage.items()},
+            stage_urls={s: [c.url for c in cs] for s, cs in by_stage.items()},
+            tags=item.tags,
+            abstained=state.abstained,
         )
+        # Deterministic metrics are free — always computed, no toggle.
+        record.metrics["abstained"] = float(state.abstained)
+        record.metrics.update(
+            stage_retrieval_metrics(record.stage_urls, item.ground_truth_context)
+        )
+        records.append(record)
     return await evaluator_fn(records)
 
 
@@ -91,6 +109,18 @@ def aggregate(records: list[EvalRecord]) -> dict[str, float]:
     return means
 
 
+def aggregate_by_tag(records: list[EvalRecord]) -> dict[str, dict[str, float]]:
+    """aggregate() per tag group; records without tags count as 'original'.
+
+    A record with several tags contributes to each of its groups.
+    """
+    groups: dict[str, list[EvalRecord]] = {}
+    for r in records:
+        for tag in r.tags or ("original",):
+            groups.setdefault(tag, []).append(r)
+    return {tag: aggregate(rs) for tag, rs in sorted(groups.items())}
+
+
 def coverage(records: list[EvalRecord]) -> dict[str, tuple[int, int]]:
     """Per-metric (valid_count, total_count) so dropped/NaN scores are visible."""
     keys = {k for r in records for k in r.metrics}
@@ -100,33 +130,67 @@ def coverage(records: list[EvalRecord]) -> dict[str, tuple[int, int]]:
     }
 
 
-def _build_ragas_clients(settings):  # pragma: no cover - live Azure wiring
+def _build_ragas_clients(settings):
+    """(llm, embeddings) RAGAS wrappers: DeepSeek offline judge + OpenAI embeddings.
+
+    The offline judge is the third family (ADR-0009) — independent of both the
+    gpt generator and the Claude online gate, so offline scores are not
+    self-judged and not gate-saturated by the same model instance. DeepSeek is
+    sold directly by Azure and served on the OpenAI-compatible route of the
+    services.ai.azure.com host, so the AzureChatOpenAI client works unchanged.
+    Embeddings (answer_relevancy only) stay on text-embedding-3-small: they are
+    a measurement primitive, not a judge.
+    """
+    if not settings.offline_judge_model:
+        raise ValueError(
+            "OFFLINE_JUDGE_MODEL is required: offline RAGAS metrics are judged "
+            "by the DeepSeek deployment (ADR-0009); set it in .env"
+        )
+    return _build_ragas_clients_live(settings)
+
+
+def _build_ragas_clients_live(settings):  # pragma: no cover - live Azure wiring
     """Build the (llm, embeddings) RAGAS wrappers backed by Foundry models via Entra."""
     from azure.identity import DefaultAzureCredential, get_bearer_token_provider
     from langchain_openai import AzureChatOpenAI, AzureOpenAIEmbeddings
     from ragas.embeddings import LangchainEmbeddingsWrapper
     from ragas.llms import LangchainLLMWrapper
 
-    from ragpipe.embeddings import openai_endpoint_from_project
+    from ragpipe.embeddings import (
+        openai_endpoint_from_project,
+        services_endpoint_from_project,
+    )
+    from ragpipe.foundry_judge import JUDGE_MAX_RETRIES, JUDGE_TIMEOUT
 
     token_provider = get_bearer_token_provider(
         DefaultAzureCredential(), "https://cognitiveservices.azure.com/.default"
     )
-    endpoint = openai_endpoint_from_project(settings.foundry_project_endpoint)
+    # No explicit temperature: DeepSeek-V4-Pro is a reasoning model and, like
+    # other reasoning deployments on this route, may reject sampling overrides.
+    # model= sets the request-body "model" field: the sold-by-Azure DeepSeek
+    # server (sglang) validates it and rejects a null, unlike Azure OpenAI which
+    # takes the deployment from the URL and ignores the body field.
+    # timeout + max_retries bound every judge/embedding call: without them a
+    # stalled request blocks the eval forever (see embeddings._build_client).
     llm = LangchainLLMWrapper(
         AzureChatOpenAI(
-            azure_endpoint=endpoint,
-            azure_deployment=settings.foundry_chat_model,
+            azure_endpoint=services_endpoint_from_project(settings.foundry_project_endpoint),
+            azure_deployment=settings.offline_judge_model,
+            model=settings.offline_judge_model,
             api_version="2024-10-21",
             azure_ad_token_provider=token_provider,
+            timeout=JUDGE_TIMEOUT,
+            max_retries=JUDGE_MAX_RETRIES,
         )
     )
     emb = LangchainEmbeddingsWrapper(
         AzureOpenAIEmbeddings(
-            azure_endpoint=endpoint,
+            azure_endpoint=openai_endpoint_from_project(settings.foundry_project_endpoint),
             azure_deployment=settings.foundry_embedding_model,
             api_version="2024-10-21",
             azure_ad_token_provider=token_provider,
+            timeout=JUDGE_TIMEOUT,
+            max_retries=JUDGE_MAX_RETRIES,
         )
     )
     return llm, emb
@@ -139,6 +203,9 @@ def build_ragas_evaluator(settings):  # pragma: no cover
     context metrics on the *final* reranked context set.
     """
     async def evaluator_fn(records: list[EvalRecord]) -> list[EvalRecord]:
+        if not records:
+            return records
+
         from ragpipe.guardrail import _ensure_ragas_importable
 
         _ensure_ragas_importable()
@@ -153,26 +220,38 @@ def build_ragas_evaluator(settings):  # pragma: no cover
         )
 
         llm, emb = _build_ragas_clients(settings)
-        ds = Dataset.from_list(
-            [
-                {
-                    "question": r.question,
-                    "answer": r.answer,
-                    "contexts": r.contexts,
-                    "ground_truth": r.ground_truth,
-                }
-                for r in records
-            ]
-        )
+
+        def _row(r: EvalRecord) -> dict:
+            return {
+                "question": r.question,
+                "answer": r.answer,
+                "contexts": r.contexts,
+                "ground_truth": r.ground_truth,
+            }
+
+        # Answer-level metrics are meaningless on the fixed abstention text —
+        # score them on answered records only. The abstention rate itself is
+        # already in metrics["abstained"]. Context metrics depend on retrieval,
+        # not the answer, so they are scored for every record.
+        answered = [i for i, r in enumerate(records) if not r.abstained]
+        if answered:
+            ds = Dataset.from_list([_row(records[i]) for i in answered])
+            result = evaluate(
+                ds, metrics=[faithfulness, answer_relevancy], llm=llm, embeddings=emb
+            )
+            df = result.to_pandas()
+            for j, i in enumerate(answered):
+                for metric in ["faithfulness", "answer_relevancy"]:
+                    if metric in df.columns:
+                        records[i].metrics[metric] = float(df.iloc[j][metric])
+
+        ds_all = Dataset.from_list([_row(r) for r in records])
         result = evaluate(
-            ds,
-            metrics=[faithfulness, answer_relevancy, context_precision, context_recall],
-            llm=llm,
-            embeddings=emb,
+            ds_all, metrics=[context_precision, context_recall], llm=llm, embeddings=emb
         )
         df = result.to_pandas()
         for i, r in enumerate(records):
-            for metric in ["faithfulness", "answer_relevancy", "context_precision", "context_recall"]:
+            for metric in ["context_precision", "context_recall"]:
                 if metric in df.columns:
                     r.metrics[metric] = float(df.iloc[i][metric])
         return records

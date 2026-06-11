@@ -35,6 +35,28 @@ def openai_endpoint_from_project(project_endpoint: str) -> str:
     return f"https://{account}.openai.azure.com/"
 
 
+def services_endpoint_from_project(project_endpoint: str) -> str:
+    """Strip the project path: the account's services.ai.azure.com root.
+
+    The OpenAI-compatible route on this host serves non-OpenAI models sold by
+    Azure (e.g. DeepSeek-V4-Pro) at /openai/deployments/<name> — the plain
+    <account>.openai.azure.com host serves only Azure OpenAI deployments.
+    """
+    host = urlparse(project_endpoint).netloc
+    if not host:
+        raise ValueError(f"Cannot derive host from endpoint: {project_endpoint!r}")
+    return f"https://{host}"
+
+
+def anthropic_endpoint_from_project(project_endpoint: str) -> str:
+    """Base URL for the account's Anthropic Messages route (Claude deployments).
+
+    The anthropic SDK appends /v1/messages, matching the documented target
+    https://<account>.services.ai.azure.com/anthropic/v1/messages.
+    """
+    return f"{services_endpoint_from_project(project_endpoint)}/anthropic"
+
+
 def _build_client(settings: Settings, api_version: str, timeout: float, max_retries: int):  # pragma: no cover - live Azure
     """Build an AzureOpenAI client for the account's /openai endpoint with Entra auth.
 

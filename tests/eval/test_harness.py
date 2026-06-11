@@ -11,6 +11,19 @@ from ragpipe.eval.testset import TestItem
 from ragpipe.models import Chunk, PipelineState
 
 
+def test_offline_judge_requires_offline_judge_model():
+    from ragpipe.eval.harness import _build_ragas_clients
+
+    class _Settings:
+        foundry_project_endpoint = "https://acct.services.ai.azure.com/api/projects/p"
+        foundry_chat_model = "gpt-5.4"
+        foundry_embedding_model = "text-embedding-3-small"
+        offline_judge_model = None
+
+    with pytest.raises(ValueError, match="OFFLINE_JUDGE_MODEL"):
+        _build_ragas_clients(_Settings())
+
+
 def test_aggregate_means_per_metric():
     records = [
         EvalRecord(question="q1", answer="a1", contexts=["c"], ground_truth="g1",
@@ -73,3 +86,27 @@ async def test_run_harness_builds_records_from_pipeline_and_evaluator():
     assert records[0].stage_contexts["bm25"] == ["bm25-ctx"]
     assert records[0].stage_contexts["fused"] == ["fused-ctx"]
     assert records[0].stage_contexts["reranked"] == ["ctx-content"]
+
+
+@pytest.mark.asyncio
+async def test_harness_records_abstention_metric():
+    async def pipeline_fn(q):
+        s = PipelineState(query=q, answer="abstained")
+        s.abstained = True
+        return s
+
+    async def evaluator_fn(records):
+        return records
+
+    items = [TestItem(question="q", ground_truth="g", ground_truth_context="http://u")]
+    records = await run_harness(items, pipeline_fn, evaluator_fn)
+    assert records[0].abstained is True
+    assert records[0].metrics["abstained"] == 1.0
+
+
+def test_aggregate_reports_abstention_rate():
+    r1 = EvalRecord(question="a", answer="x", contexts=[], ground_truth="g",
+                    metrics={"abstained": 1.0})
+    r2 = EvalRecord(question="b", answer="y", contexts=[], ground_truth="g",
+                    metrics={"abstained": 0.0})
+    assert aggregate([r1, r2])["abstained"] == 0.5

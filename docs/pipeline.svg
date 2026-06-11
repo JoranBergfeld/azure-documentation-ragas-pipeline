@@ -16,7 +16,7 @@
 
   <!-- title + legend -->
   <text x="32" y="34" font-size="22" font-weight="700" fill="#1B2733">RAGAS-infused RAG pipeline</text>
-  <text x="32" y="52" font-size="13" fill="#5B6B7B">Hybrid retrieval → rerank → Foundry agent → faithfulness guardrail, evaluated with RAGAS</text>
+  <text x="32" y="52" font-size="13" fill="#5B6B7B">Contextual chunk decoration → hybrid retrieval → rerank → Foundry agent → faithfulness guardrail; deterministic + RAGAS evaluation</text>
   <g font-size="11.5" fill="#5B6B7B">
     <rect x="760" y="22" width="13" height="13" rx="3" fill="#E3F0FB" stroke="#0078D4"/><text x="779" y="32">Azure AI service</text>
     <rect x="900" y="22" width="13" height="13" rx="3" fill="#F0EAFA" stroke="#8661C5"/><text x="919" y="32">Foundry agent</text>
@@ -24,40 +24,56 @@
   </g>
 
   <!-- ================= BAND A: INGEST ================= -->
-  <rect x="24" y="64" width="1132" height="104" rx="12" fill="#F5F8FB" stroke="#D6E4F0"/>
-  <text x="40" y="86" font-size="13" font-weight="700" fill="#5B6B7B">①  Ingest — build &amp; index the corpus (offline)</text>
+  <rect x="24" y="64" width="1132" height="112" rx="12" fill="#F5F8FB" stroke="#D6E4F0"/>
+  <text x="40" y="86" font-size="13" font-weight="700" fill="#5B6B7B">①  Ingest — extract, decorate &amp; index the corpus (offline)</text>
 
   <g>
-    <rect x="40" y="104" width="180" height="44" rx="8" fill="#EEF2F6" stroke="#9AA8B5" stroke-width="1.5"/>
-    <text x="130" y="123" text-anchor="middle" font-size="13" font-weight="600" fill="#1B2733">build_corpus.py</text>
-    <text x="130" y="138" text-anchor="middle" font-size="11" fill="#5B6B7B">crawl MS Learn sitemaps</text>
+    <rect x="40" y="100" width="148" height="44" rx="8" fill="#EEF2F6" stroke="#9AA8B5" stroke-width="1.5"/>
+    <text x="114" y="119" text-anchor="middle" font-size="12.5" font-weight="600" fill="#1B2733">build_corpus.py</text>
+    <text x="114" y="134" text-anchor="middle" font-size="10.5" fill="#5B6B7B">crawl MS Learn sitemaps</text>
   </g>
   <g>
-    <rect x="250" y="104" width="150" height="44" rx="8" fill="#FFF6E6" stroke="#E3B341" stroke-width="1.5"/>
-    <text x="325" y="130" text-anchor="middle" font-size="12.5" font-weight="600" fill="#1B2733">corpus_sources.yaml</text>
+    <rect x="208" y="100" width="140" height="44" rx="8" fill="#FFF6E6" stroke="#E3B341" stroke-width="1.5"/>
+    <text x="278" y="126" text-anchor="middle" font-size="11.5" font-weight="600" fill="#1B2733">corpus_sources.yaml</text>
   </g>
   <g>
-    <rect x="430" y="104" width="240" height="44" rx="8" fill="#EEF2F6" stroke="#9AA8B5" stroke-width="1.5"/>
-    <text x="550" y="123" text-anchor="middle" font-size="13" font-weight="600" fill="#1B2733">ragpipe.ingest</text>
-    <text x="550" y="138" text-anchor="middle" font-size="11" fill="#5B6B7B">fetch · chunk · embed · prune stale</text>
+    <rect x="368" y="100" width="156" height="44" rx="8" fill="#EEF2F6" stroke="#9AA8B5" stroke-width="1.5"/>
+    <text x="446" y="119" text-anchor="middle" font-size="12.5" font-weight="600" fill="#1B2733">extract markdown</text>
+    <text x="446" y="134" text-anchor="middle" font-size="10.5" fill="#5B6B7B">main content · code+tables kept</text>
   </g>
   <g>
-    <rect x="700" y="104" width="190" height="44" rx="8" fill="#E3F0FB" stroke="#0078D4" stroke-width="1.5"/>
-    <text x="795" y="130" text-anchor="middle" font-size="12.5" font-weight="600" fill="#1B2733">Azure AI Search index</text>
+    <rect x="544" y="100" width="156" height="44" rx="8" fill="#EEF2F6" stroke="#9AA8B5" stroke-width="1.5"/>
+    <text x="622" y="119" text-anchor="middle" font-size="12.5" font-weight="600" fill="#1B2733">heading-aware chunks</text>
+    <text x="622" y="134" text-anchor="middle" font-size="10.5" fill="#5B6B7B">+ breadcrumbs</text>
+  </g>
+  <g>
+    <rect x="720" y="100" width="170" height="44" rx="8" fill="#E3F0FB" stroke="#0078D4" stroke-width="1.5"/>
+    <text x="805" y="119" text-anchor="middle" font-size="12.5" font-weight="600" fill="#1B2733">context generation</text>
+    <text x="805" y="134" text-anchor="middle" font-size="10.5" fill="#5B6B7B">gpt-4o · cached · per chunk</text>
+  </g>
+  <g>
+    <rect x="946" y="100" width="210" height="44" rx="8" fill="#E3F0FB" stroke="#0078D4" stroke-width="1.5"/>
+    <text x="1051" y="119" text-anchor="middle" font-size="12.5" font-weight="600" fill="#1B2733">Azure AI Search index</text>
+    <text x="1051" y="134" text-anchor="middle" font-size="10.5" fill="#5B6B7B">content + context fields</text>
   </g>
 
-  <path d="M220,126 L246,126" stroke="#6B7A88" stroke-width="1.6" fill="none" marker-end="url(#arrow)"/>
-  <path d="M400,126 L426,126" stroke="#6B7A88" stroke-width="1.6" fill="none" marker-end="url(#arrow)"/>
-  <path d="M670,126 L696,126" stroke="#6B7A88" stroke-width="1.6" fill="none" marker-end="url(#arrow)"/>
+  <path d="M188,122 L204,122" stroke="#6B7A88" stroke-width="1.6" fill="none" marker-end="url(#arrow)"/>
+  <path d="M348,122 L364,122" stroke="#6B7A88" stroke-width="1.6" fill="none" marker-end="url(#arrow)"/>
+  <path d="M524,122 L540,122" stroke="#6B7A88" stroke-width="1.6" fill="none" marker-end="url(#arrow)"/>
+  <path d="M700,122 L716,122" stroke="#6B7A88" stroke-width="1.6" fill="none" marker-end="url(#arrow)"/>
+  <path d="M890,122 L942,122" stroke="#6B7A88" stroke-width="1.6" fill="none" marker-end="url(#arrow)"/>
+
+  <text x="460" y="158" text-anchor="middle" font-size="10.5" fill="#5B6B7B">context = breadcrumb + LLM situating sentence (ADR-0001/0005) · embedding input = context + content</text>
+  <text x="460" y="171" text-anchor="middle" font-size="10.5" fill="#5B6B7B">upload is an id-keyed upsert; stale chunks pruned after full ingest (ADR-0007)</text>
 
   <!-- ================= BAND B: QUERY PIPELINE ================= -->
   <rect x="24" y="188" width="1132" height="316" rx="12" fill="#FAF7FD" stroke="#E2D6F0"/>
   <text x="40" y="210" font-size="13" font-weight="700" fill="#5B6B7B">②  Query pipeline — Microsoft Agent Framework Workflow (runtime)</text>
 
   <!-- index feeds the two retrievers -->
-  <path d="M760,150 C 620,206 380,214 290,256" stroke="#0078D4" stroke-width="1.4" stroke-dasharray="5 4" opacity="0.6" fill="none" marker-end="url(#arrowAz)"/>
-  <path d="M800,150 C 770,330 470,378 364,398" stroke="#0078D4" stroke-width="1.4" stroke-dasharray="5 4" opacity="0.6" fill="none" marker-end="url(#arrowAz)"/>
-  <text x="520" y="240" font-size="11" fill="#0078D4" opacity="0.85">queries index</text>
+  <path d="M1000,144 C 700,212 400,216 290,256" stroke="#0078D4" stroke-width="1.4" stroke-dasharray="5 4" opacity="0.6" fill="none" marker-end="url(#arrowAz)"/>
+  <path d="M980,148 C 620,225 400,300 352,368" stroke="#0078D4" stroke-width="1.4" stroke-dasharray="5 4" opacity="0.6" fill="none" marker-end="url(#arrowAz)"/>
+  <text x="520" y="238" font-size="11" fill="#0078D4" opacity="0.85">queries index — context field boosts vector · BM25 · semantic (ADR-0003)</text>
 
   <g>
     <rect x="40" y="300" width="110" height="44" rx="8" fill="#EEF2F6" stroke="#9AA8B5" stroke-width="1.5"/>
@@ -99,6 +115,10 @@
     <text x="865" y="445" text-anchor="middle" font-size="11" fill="#5B6B7B">guardrail</text>
   </g>
 
+  <!-- generator/judge isolation note -->
+  <text x="880" y="372" font-size="10.5" fill="#8661C5">prompt &amp; judge see clean</text>
+  <text x="880" y="386" font-size="10.5" fill="#8661C5">content only (ADR-0003)</text>
+
   <!-- flow -->
   <path d="M150,312 L206,276" stroke="#6B7A88" stroke-width="1.6" fill="none" marker-end="url(#arrow)"/>
   <path d="M150,332 L206,392" stroke="#6B7A88" stroke-width="1.6" fill="none" marker-end="url(#arrow)"/>
@@ -109,36 +129,42 @@
   <path d="M865,344 L865,406" stroke="#6B7A88" stroke-width="1.6" fill="none" marker-end="url(#arrow)"/>
   <!-- guardrail passes -> answer -->
   <path d="M970,432 C 1083,432 1083,372 1083,348" stroke="#2E9E4B" stroke-width="1.6" fill="none" marker-end="url(#arrowTeal)"/>
-  <text x="1000" y="400" font-size="11" font-weight="600" fill="#2E9E4B">faithful ≥ θ</text>
+  <text x="1000" y="412" font-size="11" font-weight="600" fill="#2E9E4B">faithful ≥ θ</text>
   <!-- guardrail fails -> retry from RRF -->
   <path d="M812,454 L812,482 L470,482 L470,346" stroke="#2E9E4B" stroke-width="1.6" stroke-dasharray="6 4" fill="none" marker-end="url(#arrowTeal)"/>
   <text x="566" y="476" font-size="11" font-weight="600" fill="#2E9E4B">unfaithful &lt; θ — retry (max N)</text>
 
   <!-- ================= BAND C: EVAL ================= -->
-  <rect x="24" y="524" width="1132" height="152" rx="12" fill="#F3FAF4" stroke="#CDE9D2"/>
-  <text x="40" y="546" font-size="13" font-weight="700" fill="#5B6B7B">③  Evaluation — RAGAS (offline)</text>
+  <rect x="24" y="524" width="1132" height="160" rx="12" fill="#F3FAF4" stroke="#CDE9D2"/>
+  <text x="40" y="546" font-size="13" font-weight="700" fill="#5B6B7B">③  Evaluation — deterministic metrics + RAGAS (offline, baseline vs post-change · ADR-0006)</text>
 
   <!-- eval replays the pipeline -->
-  <path d="M470,504 L390,576" stroke="#9AA8B5" stroke-width="1.5" stroke-dasharray="6 4" fill="none" marker-end="url(#arrow)"/>
-  <text x="440" y="548" font-size="11" fill="#5B6B7B">eval replays ②</text>
+  <path d="M470,504 L355,572" stroke="#9AA8B5" stroke-width="1.5" stroke-dasharray="6 4" fill="none" marker-end="url(#arrow)"/>
+  <text x="485" y="517" font-size="11" fill="#5B6B7B">eval replays ②</text>
 
   <g>
-    <rect x="40" y="576" width="200" height="44" rx="8" fill="#EEF2F6" stroke="#9AA8B5" stroke-width="1.5"/>
-    <text x="140" y="595" text-anchor="middle" font-size="13" font-weight="600" fill="#1B2733">Test set</text>
-    <text x="140" y="610" text-anchor="middle" font-size="11" fill="#5B6B7B">handauthored | synthetic</text>
+    <rect x="40" y="576" width="210" height="44" rx="8" fill="#EEF2F6" stroke="#9AA8B5" stroke-width="1.5"/>
+    <text x="145" y="595" text-anchor="middle" font-size="12.5" font-weight="600" fill="#1B2733">Test set — tagged</text>
+    <text x="145" y="610" text-anchor="middle" font-size="10.5" fill="#5B6B7B">original · paraphrase · lookalike · synthetic</text>
   </g>
   <g>
-    <rect x="290" y="576" width="150" height="44" rx="8" fill="#EEF2F6" stroke="#9AA8B5" stroke-width="1.5"/>
-    <text x="365" y="602" text-anchor="middle" font-size="12.5" font-weight="600" fill="#1B2733">Run pipeline ②</text>
+    <rect x="280" y="576" width="140" height="44" rx="8" fill="#EEF2F6" stroke="#9AA8B5" stroke-width="1.5"/>
+    <text x="350" y="602" text-anchor="middle" font-size="12.5" font-weight="600" fill="#1B2733">Run pipeline ②</text>
   </g>
   <g>
-    <rect x="490" y="576" width="300" height="44" rx="8" fill="#E5F5E9" stroke="#2E9E4B" stroke-width="1.5"/>
-    <text x="640" y="595" text-anchor="middle" font-size="13" font-weight="600" fill="#1B2733">RAGAS metrics</text>
-    <text x="640" y="610" text-anchor="middle" font-size="11" fill="#5B6B7B">faithfulness · answer relevancy · context P/R (per-stage)</text>
+    <rect x="490" y="556" width="300" height="38" rx="8" fill="#E5F5E9" stroke="#2E9E4B" stroke-width="1.5"/>
+    <text x="640" y="572" text-anchor="middle" font-size="12" font-weight="600" fill="#1B2733">Deterministic retrieval metrics</text>
+    <text x="640" y="586" text-anchor="middle" font-size="10.5" fill="#5B6B7B">hit_rate · MRR per stage — URL match, no LLM (ADR-0002)</text>
   </g>
   <g>
-    <rect x="830" y="576" width="150" height="44" rx="8" fill="#FFF6E6" stroke="#E3B341" stroke-width="1.5"/>
-    <text x="905" y="602" text-anchor="middle" font-size="12.5" font-weight="600" fill="#1B2733">eval_results.json</text>
+    <rect x="490" y="602" width="300" height="38" rx="8" fill="#E5F5E9" stroke="#2E9E4B" stroke-width="1.5"/>
+    <text x="640" y="618" text-anchor="middle" font-size="12" font-weight="600" fill="#1B2733">RAGAS metrics (LLM judge)</text>
+    <text x="640" y="632" text-anchor="middle" font-size="10.5" fill="#5B6B7B">faithfulness · answer relevancy · context P/R (per-stage)</text>
+  </g>
+  <g>
+    <rect x="820" y="576" width="170" height="44" rx="8" fill="#FFF6E6" stroke="#E3B341" stroke-width="1.5"/>
+    <text x="905" y="595" text-anchor="middle" font-size="12.5" font-weight="600" fill="#1B2733">eval_results.json</text>
+    <text x="905" y="610" text-anchor="middle" font-size="10.5" fill="#5B6B7B">vs eval_baseline.json</text>
   </g>
   <g>
     <rect x="1010" y="576" width="146" height="44" rx="8" fill="#EEF2F6" stroke="#9AA8B5" stroke-width="1.5"/>
@@ -146,8 +172,10 @@
     <text x="1083" y="610" text-anchor="middle" font-size="11" fill="#5B6B7B">Run · Eval · Arch</text>
   </g>
 
-  <path d="M240,598 L286,598" stroke="#6B7A88" stroke-width="1.6" fill="none" marker-end="url(#arrow)"/>
-  <path d="M440,598 L486,598" stroke="#6B7A88" stroke-width="1.6" fill="none" marker-end="url(#arrow)"/>
-  <path d="M790,598 L826,598" stroke="#6B7A88" stroke-width="1.6" fill="none" marker-end="url(#arrow)"/>
-  <path d="M980,598 L1006,598" stroke="#6B7A88" stroke-width="1.6" fill="none" marker-end="url(#arrow)"/>
+  <path d="M250,598 L276,598" stroke="#6B7A88" stroke-width="1.6" fill="none" marker-end="url(#arrow)"/>
+  <path d="M420,592 L486,578" stroke="#6B7A88" stroke-width="1.6" fill="none" marker-end="url(#arrow)"/>
+  <path d="M420,604 L486,618" stroke="#6B7A88" stroke-width="1.6" fill="none" marker-end="url(#arrow)"/>
+  <path d="M790,575 L816,588" stroke="#6B7A88" stroke-width="1.6" fill="none" marker-end="url(#arrow)"/>
+  <path d="M790,621 L816,608" stroke="#6B7A88" stroke-width="1.6" fill="none" marker-end="url(#arrow)"/>
+  <path d="M990,598 L1006,598" stroke="#6B7A88" stroke-width="1.6" fill="none" marker-end="url(#arrow)"/>
 </svg>

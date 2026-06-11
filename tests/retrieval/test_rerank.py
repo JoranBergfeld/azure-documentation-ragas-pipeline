@@ -45,3 +45,33 @@ def test_reranker_empty_input_returns_empty():
     client = FakeSearchClient([])
     reranker = SemanticReranker(client, semantic_config="default-semantic", top_k=3)
     assert reranker.rerank("q", []) == []
+
+
+def test_reranker_sends_hybrid_vector_query_when_embed_fn_present():
+    fused = [_chunk("a"), _chunk("b")]
+    client = FakeSearchClient([_doc("a", 2.0), _doc("b", 1.0)])
+    reranker = SemanticReranker(
+        client, semantic_config="default-semantic", top_k=2,
+        embed_fn=lambda q: [0.1, 0.2],
+    )
+
+    reranker.rerank("query", fused)
+
+    vqs = client.last_kwargs["vector_queries"]
+    assert vqs is not None and len(vqs) == 1
+    assert list(vqs[0].vector) == [0.1, 0.2]
+    # stage-1 recall must cover every fused candidate, not just top_k
+    assert vqs[0].k == len(fused)
+    # the lexical leg is still present (semantic reranker needs the text query)
+    assert client.last_kwargs["search_text"] == "query"
+
+
+def test_reranker_top_k_override_widens_window():
+    fused = [_chunk("a"), _chunk("b"), _chunk("c")]
+    client = FakeSearchClient([_doc("a", 3.0), _doc("b", 2.0), _doc("c", 1.0)])
+    reranker = SemanticReranker(client, semantic_config="default-semantic", top_k=1)
+
+    out = reranker.rerank("q", fused, top_k=3)
+
+    assert client.last_kwargs["top"] == 3
+    assert len(out) == 3

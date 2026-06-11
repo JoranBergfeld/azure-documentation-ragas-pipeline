@@ -52,3 +52,12 @@ any metric movement is unattributable.
   https://arxiv.org/abs/2311.09476
 - *Towards Reliable Retrieval in RAG Systems for Large Legal Datasets*
   (DRM-targeted evaluation design) — https://arxiv.org/abs/2510.06999
+
+## Addendum (2026-06-11)
+
+ADR-0009 re-anchors all LLM-judged metrics (judge models changed) and adds
+`abstained` to every report; ADR-0010 sets the synthetic-data policy and size
+targets for the testset expansion in §1. The baseline protocol in §2 is
+unchanged and still pending execution: `eval_baseline.json` must be produced
+(on the work machine) from `main` *before* the ADR-0009 branch's first eval
+run, judged with the same three-family configuration so the pair is comparable.
