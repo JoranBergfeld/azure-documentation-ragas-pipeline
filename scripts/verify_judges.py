@@ -1,6 +1,6 @@
 """One-shot LIVE smoke for every model route (run on a machine with Azure access
-BEFORE any ingest or eval run). Verifies: Claude gate scoring, DeepSeek offline
-judge, gpt decoration call, raw Claude completion. Exits non-zero on failure."""
+BEFORE any ingest or eval run). Verifies: online judge gate scoring, DeepSeek
+offline judge, gpt decoration call, raw judge completion. Exits non-zero on failure."""
 import asyncio
 import sys
 
@@ -43,15 +43,15 @@ def main() -> int:
 
         return build_context_complete_fn(settings)("Reply with exactly: OK")
 
-    def claude_raw():
-        from ragpipe.foundry_claude import build_claude_complete_fn
+    def judge_raw():
+        from ragpipe.foundry_judge import build_judge_complete_fn
 
-        return build_claude_complete_fn(settings)("Reply with exactly: OK")
+        return build_judge_complete_fn(settings)("Reply with exactly: OK")
 
-    check("claude gate (RAGAS faithfulness)", gate)
+    check("online judge gate (RAGAS faithfulness)", gate)
     check("deepseek offline judge", offline_judge)
     check("gpt decoration completion", decoration)
-    check("claude raw completion", claude_raw)
+    check("judge raw completion", judge_raw)
     return 1 if failures else 0
 
 

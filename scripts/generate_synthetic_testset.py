@@ -15,7 +15,7 @@ from azure.search.documents import SearchClient
 
 from ragpipe.config import Settings
 from ragpipe.eval.synthetic import make_candidates, page_text_from_index
-from ragpipe.foundry_claude import build_claude_complete_fn
+from ragpipe.foundry_judge import build_judge_complete_fn
 
 
 def main() -> None:
@@ -28,7 +28,7 @@ def main() -> None:
     search = SearchClient(
         settings.search_endpoint, settings.search_index, DefaultAzureCredential()
     )
-    complete = build_claude_complete_fn(settings)
+    complete = build_judge_complete_fn(settings)
 
     rows = []
     for url in args.urls:

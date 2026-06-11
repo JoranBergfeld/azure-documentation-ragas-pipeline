@@ -80,7 +80,7 @@ def _build_claude_faithfulness(settings) -> MetricFn:  # pragma: no cover - live
     from ragas.metrics import Faithfulness
 
     from ragpipe.embeddings import anthropic_endpoint_from_project
-    from ragpipe.foundry_claude import AI_FOUNDRY_SCOPE
+    from ragpipe.foundry_judge import AI_FOUNDRY_SCOPE
 
     token_provider = get_bearer_token_provider(DefaultAzureCredential(), AI_FOUNDRY_SCOPE)
     base_url = anthropic_endpoint_from_project(settings.foundry_project_endpoint)
