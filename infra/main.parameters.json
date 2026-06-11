@@ -3,7 +3,9 @@
   "contentVersion": "1.0.0.0",
   "parameters": {
     "location": { "value": "${AZURE_LOCATION=swedencentral}" },
-    "baseName": { "value": "ragpipe" },
+    "baseName": { "value": "${RAGPIPE_BASE_NAME=ragpipe}" },
+    "judgeModel": { "value": "${JUDGE_MODEL}" },
+    "offlineJudgeModel": { "value": "${OFFLINE_JUDGE_MODEL}" },
     "principalId": { "value": "${AZURE_PRINCIPAL_ID}" },
     "principalType": { "value": "${AZURE_PRINCIPAL_TYPE=User}" }
   }

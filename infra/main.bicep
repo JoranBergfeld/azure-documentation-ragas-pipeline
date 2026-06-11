@@ -27,6 +27,9 @@ param judgeModel string = 'claude-sonnet-4-6'
 @description('Offline RAGAS judge deployment. DeepSeek-V4-Pro (preview) is sold directly by Azure: GlobalStandard in all regions (incl. swedencentral), served on the OpenAI-compatible route, Azure-direct licensing — no marketplace acceptance needed (unlike Claude). Third family besides the OpenAI generator and the Anthropic online gate (ADR-0009). Set to empty string to skip.')
 param offlineJudgeModel string = 'DeepSeek-V4-Pro'
 
+@description('DeepSeek offline-judge deployment version. Required: unlike the OpenAI/Anthropic deployments (which resolve a current default when version is omitted), the DeepSeek route rejects a version-less deployment with DeploymentModelNotSupported. GA version in swedencentral is 2026-04-23.')
+param offlineJudgeModelVersion string = '2026-04-23'
+
 @description('Embedding model deployment name. Deployed as GlobalStandard: text-embedding-3-small has no regional-Standard availability in swedencentral (that limitation is what previously forced switzerlandnorth).')
 param embeddingModel string = 'text-embedding-3-small'
 
@@ -146,7 +149,7 @@ resource offlineJudge 'Microsoft.CognitiveServices/accounts/deployments@2025-04-
   // replay, so chat-level (100) headroom isn't needed.
   sku: { name: 'GlobalStandard', capacity: 50 }
   properties: {
-    model: { format: 'DeepSeek', name: offlineJudgeModel }
+    model: { format: 'DeepSeek', name: offlineJudgeModel, version: offlineJudgeModelVersion }
   }
 }
 
