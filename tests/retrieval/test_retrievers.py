@@ -48,3 +48,5 @@ def test_dense_retriever_issues_vector_query():
     # dense = vector query, no full-text search_text
     assert client.last_kwargs["search_text"] is None
     assert client.last_kwargs["vector_queries"]  # non-empty
+    # Regression: k kwarg (not k_nearest_neighbors) must be passed to VectorizedQuery
+    assert client.last_kwargs["vector_queries"][0].k == 5
