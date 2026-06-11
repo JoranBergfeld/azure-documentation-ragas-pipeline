@@ -54,20 +54,25 @@ def _ensure_ragas_importable() -> None:  # pragma: no cover
 
 
 def build_ragas_faithfulness(settings) -> MetricFn:
-    """Faithfulness gate judged by the Claude deployment (ADR-0009).
+    """Faithfulness gate judged by a non-generator family (ADR-0009).
 
     The gate decides what users see, so it must not share a family with the
     generator: a judge from the generator's own family is systematically
-    lenient on its own outputs (self-preference bias). Raises if JUDGE_MODEL
-    is unset — silently falling back to the generator would recreate the
-    circular setup this replaces.
+    lenient on its own outputs (self-preference bias). Routed by provider
+    (ADR-0011): Claude on the /anthropic route, every other family on the
+    OpenAI-compatible route. Raises if JUDGE_MODEL is unset — silently falling
+    back to the generator would recreate the circular setup this replaces.
     """
     if not settings.judge_model:
         raise ValueError(
-            "JUDGE_MODEL is required: the faithfulness gate is judged by the "
-            "Claude deployment (ADR-0009); set it in .env"
+            "JUDGE_MODEL is required: the faithfulness gate is judged by a "
+            "non-generator family (ADR-0009); set it in .env"
         )
-    return _build_claude_faithfulness(settings)
+    from ragpipe.foundry_judge import judge_provider
+
+    if judge_provider(settings.judge_model) == "anthropic":
+        return _build_claude_faithfulness(settings)
+    return _build_openai_faithfulness(settings)
 
 
 def _build_claude_faithfulness(settings) -> MetricFn:  # pragma: no cover - live wiring
@@ -110,6 +115,44 @@ def _build_claude_faithfulness(settings) -> MetricFn:  # pragma: no cover - live
             user_input=question, response=answer, retrieved_contexts=contexts
         )
         return float(await _metric().single_turn_ascore(sample))
+
+    return metric_fn
+
+
+def _build_openai_faithfulness(settings) -> MetricFn:  # pragma: no cover - live wiring
+    _ensure_ragas_importable()
+
+    from azure.identity import DefaultAzureCredential, get_bearer_token_provider
+    from langchain_openai import AzureChatOpenAI
+    from ragas.dataset_schema import SingleTurnSample
+    from ragas.llms import LangchainLLMWrapper
+    from ragas.metrics import Faithfulness
+
+    from ragpipe.embeddings import (
+        COGNITIVE_SERVICES_SCOPE,
+        services_endpoint_from_project,
+    )
+
+    token_provider = get_bearer_token_provider(
+        DefaultAzureCredential(), COGNITIVE_SERVICES_SCOPE
+    )
+    # azure_ad_token_provider auto-refreshes, so the judge is built once (the
+    # Anthropic path rebuilds per call because ChatAnthropic fixes headers at
+    # construction). No explicit temperature: reasoning deployments on this
+    # route may reject sampling overrides (matches the offline DeepSeek judge).
+    judge_chat = AzureChatOpenAI(
+        azure_endpoint=services_endpoint_from_project(settings.foundry_project_endpoint),
+        azure_deployment=settings.judge_model,
+        api_version="2024-10-21",
+        azure_ad_token_provider=token_provider,
+    )
+    metric = Faithfulness(llm=LangchainLLMWrapper(judge_chat))
+
+    async def metric_fn(*, question: str, answer: str, contexts: list[str]) -> float:
+        sample = SingleTurnSample(
+            user_input=question, response=answer, retrieved_contexts=contexts
+        )
+        return float(await metric.single_turn_ascore(sample))
 
     return metric_fn
 
