@@ -125,9 +125,13 @@ def decide_next(
 ) -> LoopDecision:
     """Decide whether to accept the answer, retry, or give up.
 
-    A missing score (judge failure) is fail-closed: never PASS.
+    A missing score (judge failure) is fail-closed AND fail-fast: it can never
+    PASS, and it goes straight to EXHAUSTED — retrying regenerates the answer,
+    which cannot fix a judge infrastructure failure and only multiplies cost.
     """
-    if score is not None and score >= threshold:
+    if score is None:
+        return LoopDecision.EXHAUSTED
+    if score >= threshold:
         return LoopDecision.PASS
     if attempt < max_retries:
         return LoopDecision.RETRY
