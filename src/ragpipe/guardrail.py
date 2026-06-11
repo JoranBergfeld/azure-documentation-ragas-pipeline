@@ -140,9 +140,12 @@ def _build_openai_faithfulness(settings) -> MetricFn:  # pragma: no cover - live
     # Anthropic path rebuilds per call because ChatAnthropic fixes headers at
     # construction). No explicit temperature: reasoning deployments on this
     # route may reject sampling overrides (matches the offline DeepSeek judge).
+    # model= sets the request-body "model" field: sold-by-Azure servers (e.g.
+    # DeepSeek's sglang) validate it and reject a null; Kimi tolerates either.
     judge_chat = AzureChatOpenAI(
         azure_endpoint=services_endpoint_from_project(settings.foundry_project_endpoint),
         azure_deployment=settings.judge_model,
+        model=settings.judge_model,
         api_version="2024-10-21",
         azure_ad_token_provider=token_provider,
     )

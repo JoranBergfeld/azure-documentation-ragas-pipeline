@@ -166,10 +166,14 @@ def _build_ragas_clients_live(settings):  # pragma: no cover - live Azure wiring
     )
     # No explicit temperature: DeepSeek-V4-Pro is a reasoning model and, like
     # other reasoning deployments on this route, may reject sampling overrides.
+    # model= sets the request-body "model" field: the sold-by-Azure DeepSeek
+    # server (sglang) validates it and rejects a null, unlike Azure OpenAI which
+    # takes the deployment from the URL and ignores the body field.
     llm = LangchainLLMWrapper(
         AzureChatOpenAI(
             azure_endpoint=services_endpoint_from_project(settings.foundry_project_endpoint),
             azure_deployment=settings.offline_judge_model,
+            model=settings.offline_judge_model,
             api_version="2024-10-21",
             azure_ad_token_provider=token_provider,
         )
