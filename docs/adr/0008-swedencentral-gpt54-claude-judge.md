@@ -1,6 +1,6 @@
 # 0008 — Sweden Central region; gpt-5.4 generator; claude-sonnet-4-6 provisioned as judge
 
-**Status:** Accepted (2026-06-10)
+**Status:** Accepted (2026-06-10) — judge wiring superseded by ADR-0009 (three-family split: the Claude deployment became the online gate; DeepSeek-V4-Pro was added as the offline judge)
 
 ## Context
 
