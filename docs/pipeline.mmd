@@ -14,5 +14,5 @@ flowchart TD
   rrf --> rerank;
   rerank --> generate;
   generate --> faithfulness;
-  faithfulness -. conditional .-> rrf;
+  faithfulness -. conditional .-> rerank;
   faithfulness --> answer;

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import sys
 from dataclasses import dataclass
 from typing import Callable
 
@@ -72,7 +73,14 @@ async def run_pipeline(query: str, deps: PipelineDeps) -> PipelineState:
 
         try:
             score = await _maybe_await(deps.score(query, state.answer, state.reranked))
-        except Exception:  # judge failure -> fail-closed
+        except Exception as exc:  # judge failure -> fail-closed
+            # Logged so operators can tell an outage from a scorer bug; the
+            # decision path is identical either way (abstain immediately).
+            print(
+                f"guardrail: scorer failed: {type(exc).__name__}: {exc}",
+                file=sys.stderr,
+                flush=True,
+            )
             score = None
         state.faithfulness = score
         state.add_trace("faithfulness", {"score": score, "attempt": state.attempt})
@@ -144,6 +152,8 @@ def build_viz_workflow():
     builder.add_edge(rrf, rerank)
     builder.add_edge(rerank, generate)
     builder.add_edge(generate, faithfulness)
-    builder.add_edge(faithfulness, rrf, condition=low_faithfulness)
+    # Retries re-enter at rerank (widened window over the fixed fused set),
+    # not at rrf — retrieval + fusion run once per query (ADR-0009).
+    builder.add_edge(faithfulness, rerank, condition=low_faithfulness)
     builder.add_edge(faithfulness, answer)
     return builder.build()
