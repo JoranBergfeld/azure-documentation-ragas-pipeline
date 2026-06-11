@@ -31,6 +31,10 @@ class EvalRecord:
     stage_urls: dict[str, list[str]] = field(default_factory=dict)
     # Test-item tags (ADR-0006); empty means 'original'.
     tags: tuple[str, ...] = ()
+    # Directive guardrail outcome (ADR-0009): True when the pipeline abstained.
+    # Mirrored into metrics["abstained"] so aggregate()/aggregate_by_tag()
+    # report the abstention rate alongside every other metric for free.
+    abstained: bool = False
 
 
 PipelineFn = Callable[[str], Awaitable[PipelineState]]
@@ -72,8 +76,10 @@ async def run_harness(
             stage_contexts={s: [c.content for c in cs] for s, cs in by_stage.items()},
             stage_urls={s: [c.url for c in cs] for s, cs in by_stage.items()},
             tags=item.tags,
+            abstained=state.abstained,
         )
         # Deterministic metrics are free — always computed, no toggle.
+        record.metrics["abstained"] = float(state.abstained)
         record.metrics.update(
             stage_retrieval_metrics(record.stage_urls, item.ground_truth_context)
         )
@@ -200,26 +206,38 @@ def build_ragas_evaluator(settings):  # pragma: no cover
         )
 
         llm, emb = _build_ragas_clients(settings)
-        ds = Dataset.from_list(
-            [
-                {
-                    "question": r.question,
-                    "answer": r.answer,
-                    "contexts": r.contexts,
-                    "ground_truth": r.ground_truth,
-                }
-                for r in records
-            ]
-        )
+
+        def _row(r: EvalRecord) -> dict:
+            return {
+                "question": r.question,
+                "answer": r.answer,
+                "contexts": r.contexts,
+                "ground_truth": r.ground_truth,
+            }
+
+        # Answer-level metrics are meaningless on the fixed abstention text —
+        # score them on answered records only. The abstention rate itself is
+        # already in metrics["abstained"]. Context metrics depend on retrieval,
+        # not the answer, so they are scored for every record.
+        answered = [i for i, r in enumerate(records) if not r.abstained]
+        if answered:
+            ds = Dataset.from_list([_row(records[i]) for i in answered])
+            result = evaluate(
+                ds, metrics=[faithfulness, answer_relevancy], llm=llm, embeddings=emb
+            )
+            df = result.to_pandas()
+            for j, i in enumerate(answered):
+                for metric in ["faithfulness", "answer_relevancy"]:
+                    if metric in df.columns:
+                        records[i].metrics[metric] = float(df.iloc[j][metric])
+
+        ds_all = Dataset.from_list([_row(r) for r in records])
         result = evaluate(
-            ds,
-            metrics=[faithfulness, answer_relevancy, context_precision, context_recall],
-            llm=llm,
-            embeddings=emb,
+            ds_all, metrics=[context_precision, context_recall], llm=llm, embeddings=emb
         )
         df = result.to_pandas()
         for i, r in enumerate(records):
-            for metric in ["faithfulness", "answer_relevancy", "context_precision", "context_recall"]:
+            for metric in ["context_precision", "context_recall"]:
                 if metric in df.columns:
                     r.metrics[metric] = float(df.iloc[i][metric])
         return records
