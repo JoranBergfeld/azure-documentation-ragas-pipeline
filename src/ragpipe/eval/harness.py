@@ -160,6 +160,7 @@ def _build_ragas_clients_live(settings):  # pragma: no cover - live Azure wiring
         openai_endpoint_from_project,
         services_endpoint_from_project,
     )
+    from ragpipe.foundry_judge import JUDGE_MAX_RETRIES, JUDGE_TIMEOUT
 
     token_provider = get_bearer_token_provider(
         DefaultAzureCredential(), "https://cognitiveservices.azure.com/.default"
@@ -169,6 +170,8 @@ def _build_ragas_clients_live(settings):  # pragma: no cover - live Azure wiring
     # model= sets the request-body "model" field: the sold-by-Azure DeepSeek
     # server (sglang) validates it and rejects a null, unlike Azure OpenAI which
     # takes the deployment from the URL and ignores the body field.
+    # timeout + max_retries bound every judge/embedding call: without them a
+    # stalled request blocks the eval forever (see embeddings._build_client).
     llm = LangchainLLMWrapper(
         AzureChatOpenAI(
             azure_endpoint=services_endpoint_from_project(settings.foundry_project_endpoint),
@@ -176,6 +179,8 @@ def _build_ragas_clients_live(settings):  # pragma: no cover - live Azure wiring
             model=settings.offline_judge_model,
             api_version="2024-10-21",
             azure_ad_token_provider=token_provider,
+            timeout=JUDGE_TIMEOUT,
+            max_retries=JUDGE_MAX_RETRIES,
         )
     )
     emb = LangchainEmbeddingsWrapper(
@@ -184,6 +189,8 @@ def _build_ragas_clients_live(settings):  # pragma: no cover - live Azure wiring
             azure_deployment=settings.foundry_embedding_model,
             api_version="2024-10-21",
             azure_ad_token_provider=token_provider,
+            timeout=JUDGE_TIMEOUT,
+            max_retries=JUDGE_MAX_RETRIES,
         )
     )
     return llm, emb

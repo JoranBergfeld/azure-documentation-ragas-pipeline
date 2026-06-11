@@ -1,8 +1,18 @@
 from __future__ import annotations
 
+import asyncio
 from typing import Protocol
 
 from ragpipe.models import Chunk
+
+# Without an application-level timeout, a single stalled FoundryAgent call
+# (request sent, ACKed, but no response — no keepalive on the socket) blocks the
+# whole pipeline indefinitely; this is the eval-harness hang we observed. The
+# generator legitimately takes minutes (reasoning + Code Interpreter), so the
+# per-attempt budget is generous; a bounded retry recovers from a transient
+# stall without unbounded waiting.
+DEFAULT_GENERATE_TIMEOUT = 300.0
+DEFAULT_GENERATE_MAX_RETRIES = 1
 
 
 class _Agent(Protocol):
@@ -40,12 +50,27 @@ def build_grounding_prompt(
 
 
 class Generator:
-    def __init__(self, agent: _Agent) -> None:
+    def __init__(
+        self,
+        agent: _Agent,
+        timeout: float = DEFAULT_GENERATE_TIMEOUT,
+        max_retries: int = DEFAULT_GENERATE_MAX_RETRIES,
+    ) -> None:
         self._agent = agent
+        self._timeout = timeout
+        self._max_retries = max_retries
 
     async def generate(
         self, query: str, chunks: list[Chunk], previous_answer: str | None = None
     ) -> str:
         prompt = build_grounding_prompt(query, chunks, previous_answer)
-        result = await self._agent.run(prompt)
-        return result.text
+        last_exc: asyncio.TimeoutError | None = None
+        for _ in range(self._max_retries + 1):
+            try:
+                result = await asyncio.wait_for(
+                    self._agent.run(prompt), self._timeout
+                )
+                return result.text
+            except asyncio.TimeoutError as exc:
+                last_exc = exc
+        raise last_exc

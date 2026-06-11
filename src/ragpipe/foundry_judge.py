@@ -15,6 +15,12 @@ from typing import Callable
 
 AI_FOUNDRY_SCOPE = "https://ai.azure.com/.default"
 
+# Judge HTTP calls must be bounded (see embeddings._build_client): without a
+# request timeout a stalled call blocks its worker thread forever, and bounded
+# retries back off on transient 429s/stalls instead of failing the whole eval.
+JUDGE_TIMEOUT = 120.0
+JUDGE_MAX_RETRIES = 4
+
 
 def judge_provider(model: str) -> str:
     """Transport provider for a judge deployment name.
@@ -54,7 +60,12 @@ def _anthropic_complete_fn(settings, max_tokens: int) -> Callable[[str], str]:  
     base_url = anthropic_endpoint_from_project(settings.foundry_project_endpoint)
 
     def complete(prompt: str) -> str:
-        client = Anthropic(base_url=base_url, auth_token=token_provider())
+        client = Anthropic(
+            base_url=base_url,
+            auth_token=token_provider(),
+            timeout=JUDGE_TIMEOUT,
+            max_retries=JUDGE_MAX_RETRIES,
+        )
         resp = client.messages.create(
             model=settings.judge_model,
             max_tokens=max_tokens,
@@ -90,6 +101,8 @@ def _openai_complete_fn(settings, max_tokens: int) -> Callable[[str], str]:  # p
             azure_endpoint=azure_endpoint,
             azure_ad_token_provider=token_provider,
             api_version="2024-10-21",
+            timeout=JUDGE_TIMEOUT,
+            max_retries=JUDGE_MAX_RETRIES,
         )
         resp = client.chat.completions.create(
             model=settings.judge_model,
