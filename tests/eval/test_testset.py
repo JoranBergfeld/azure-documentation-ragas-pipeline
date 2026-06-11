@@ -5,7 +5,7 @@ import yaml
 
 from ragpipe.config import TestsetMode
 from ragpipe.eval.retrieval_metrics import normalize_url
-from ragpipe.eval.testset import TestItem, _load_jsonl, load_testset
+from ragpipe.eval.testset import TestItem, _load_jsonl, load_testset, rows_to_items
 
 
 def test_load_handauthored_reads_jsonl(tmp_path):
@@ -82,3 +82,29 @@ def test_testset_has_hard_subsets():
     assert tags.count("paraphrase") >= 6
     assert tags.count("lookalike") >= 6
     assert len(items) >= 28
+
+
+def test_rows_to_items_recovers_provenance_url_and_tags():
+    docs = [
+        {"content": "Azure AI Search supports hybrid retrieval over indexes.", "url": "http://learn/a"},
+        {"content": "Cosmos DB bulk executor moves documents fast.", "url": "http://learn/b"},
+    ]
+    rows = [
+        {
+            "user_input": "How fast is bulk import?",
+            "reference": "Fast.",
+            "reference_contexts": ["Cosmos DB bulk executor moves documents fast."],
+        }
+    ]
+    items = rows_to_items(rows, docs)
+    assert len(items) == 1
+    assert items[0].ground_truth_context == "http://learn/b"  # a URL, never chunk text
+    assert items[0].tags == ("synthetic",)
+
+
+def test_rows_to_items_drops_unrecoverable_rows():
+    rows = [
+        {"user_input": "q", "reference": "a", "reference_contexts": ["no such text"]},
+        {"user_input": "q2", "reference": "", "reference_contexts": ["irrelevant"]},
+    ]
+    assert rows_to_items(rows, docs=[{"content": "other", "url": "http://x"}]) == []
