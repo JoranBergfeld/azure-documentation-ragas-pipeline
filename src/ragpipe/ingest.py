@@ -188,7 +188,9 @@ def main(limit: int | None = None) -> None:  # pragma: no cover - integration en
 
     cred = DefaultAzureCredential()
     embed_batch = build_batch_embed_fn(settings)
-    context_gen = ContextGenerator(build_context_complete_fn(settings))
+    context_gen = ContextGenerator(
+        build_context_complete_fn(settings), model=settings.foundry_chat_model
+    )
 
     pages = fetch_pages(urls)
     if not pages:

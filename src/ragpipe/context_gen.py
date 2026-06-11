@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import sys
 import threading
 from pathlib import Path
 from typing import Callable
@@ -36,10 +37,12 @@ class ContextGenerator:
         complete_fn: Callable[[str], str],
         cache_path: str | Path = ".context_cache.json",
         max_retries: int = 2,
+        model: str = "",
     ) -> None:
         self._complete = complete_fn
         self._cache_path = Path(cache_path)
         self._max_retries = max_retries
+        self._model = model
         self._lock = threading.Lock()
         self._cache = self._load_cache()
         self.fallback_count = 0
@@ -55,9 +58,11 @@ class ContextGenerator:
         tmp.write_text(json.dumps(self._cache))
         tmp.replace(self._cache_path)
 
-    @staticmethod
-    def _key(document: str, chunk: str) -> str:
-        payload = "\x00".join((PROMPT_VERSION, document, chunk))
+    def _key(self, document: str, chunk: str) -> str:
+        # Model is part of the key: a model swap (e.g. gpt-4o -> gpt-5.4) must
+        # not serve contexts authored by the previous model (ADR-0005 covers
+        # prompt changes via PROMPT_VERSION; this covers the silent case).
+        payload = "\x00".join((PROMPT_VERSION, self._model, document, chunk))
         return hashlib.sha256(payload.encode()).hexdigest()
 
     def generate(self, document: str, chunk: str) -> str:
@@ -70,7 +75,12 @@ class ContextGenerator:
         for _ in range(self._max_retries):
             try:
                 context = self._complete(prompt).strip()
-            except Exception:  # noqa: BLE001 - one bad chunk must not abort ingest
+            except Exception as exc:  # noqa: BLE001 - one bad chunk must not abort ingest
+                print(
+                    f"context_gen: {type(exc).__name__}: {exc}",
+                    file=sys.stderr,
+                    flush=True,
+                )
                 continue
             with self._lock:
                 self._cache[key] = context
@@ -84,7 +94,12 @@ class ContextGenerator:
 def build_context_complete_fn(
     settings, api_version: str = "2024-10-21", timeout: float = 60.0, max_retries: int = 5
 ) -> Callable[[str], str]:  # pragma: no cover - live Azure call
-    """`complete(prompt) -> str` over the account's /openai endpoint, temperature=0."""
+    """`complete(prompt) -> str` over the account's /openai endpoint.
+
+    No explicit temperature: gpt-5-family reasoning deployments reject
+    non-default temperature values. Determinism comes from the content-addressed
+    cache (ADR-0005), not from sampling parameters.
+    """
     from ragpipe.embeddings import _build_client
 
     client = _build_client(settings, api_version, timeout, max_retries)
@@ -92,7 +107,6 @@ def build_context_complete_fn(
     def complete(prompt: str) -> str:
         resp = client.chat.completions.create(
             model=settings.foundry_chat_model,
-            temperature=0,
             messages=[{"role": "user", "content": prompt}],
         )
         return resp.choices[0].message.content or ""
