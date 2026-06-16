@@ -50,6 +50,49 @@ overrule it cheaply.)
   the `baseline` index (ingest) and running a live multi-mode eval cost money and need
   creds, so I am NOT running them autonomously. They're left as a morning checklist item.
 
+## Phase 1 execution outcome (overnight)
+
+All 12 build tasks + final review done on branch `feat/multi-substrate-retrieval`. Full
+suite green: **138 passed, ruff clean.** Built via subagent-driven development (fresh
+implementer per task, reviews after).
+
+What got built (the seam + Baseline):
+- `RetrievalSubstrate` seam (`retrieval/substrate.py`): substrates return
+  `RetrievalResult(candidates, stages)`; `HybridSubstrate` owns dense+bm25+rrf.
+- `PipelineState` generalized to a `stages` dict (+ `candidates`); `reranked` kept and
+  mirrored into `stages["reranked"]`.
+- Mode registry (`retrieval/registry.py`) with `contextual` (default) + `baseline`;
+  `build_pipeline_fn(settings, mode)` is mode-aware.
+- `RetrievalMode` enum + per-substrate index names in config.
+- Harness reads stages dynamically + `aggregate_by_mode`; `run.py --modes` writes
+  `eval_results.json` keyed by mode; dashboard + API (`/run?mode`, `/compare`, dual-shape
+  `/eval`) updated. Baseline ingest path + `build_index(include_context=False)`.
+- ADRs 0011-0015.
+
+Decisions / deviations made during execution (your call to overrule any):
+- **Review approach:** I used full reviewer subagents for the substantive integration
+  tasks (the workflow refactor, plus a final holistic branch review) and verified the
+  small verbatim tasks myself (ran tests + ruff + read the diff). This deviates from the
+  skill's strict per-task two-reviewer split, traded for tractability on a 12-task
+  unattended run. Every task still passed tests + lint, and the final review caught the
+  one real gap below.
+- **Removed `rrf_k` from `PipelineDeps`** (dead after the substrate took over fusion;
+  flagged by review). It now lives only on `Settings` and `HybridSubstrate`.
+- **Stale test fixtures:** three test files set old-style `state.dense/bm25/fused`
+  directly; migrated them to `set_stage`/`set_reranked`. One (`test_harness_metrics.py`)
+  was a real regression a scoped per-task test run missed — caught when a later task ran
+  the fuller suite. Lesson logged: run the whole suite between coupled refactors.
+- **Final-review fix:** the Streamlit dashboard eval tab only understood the old
+  single-run `eval_results.json`; I added a per-mode comparison chart + mode drill-down
+  for the new shape. The API `/eval` already handled both shapes.
+
+Known limitations left for later phases (not bugs):
+- `build_viz_workflow` still draws the static dense/bm25/rrf graph. It's label-only and
+  the contextual/baseline modes still produce those stages, so it's fine for Phase 1;
+  RAPTOR/graph stages won't appear in the static diagram until we generalize it.
+- `RETRIEVAL_STAGES` (the per-stage sweep default) is still the hybrid tuple; later
+  substrates name different stages and the sweep default will need widening.
+
 ## Morning checklist (live steps I did not run)
 
 - `uv run python -m ragpipe.ingest` equivalent for baseline: build the `baseline` index
