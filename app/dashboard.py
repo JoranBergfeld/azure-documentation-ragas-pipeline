@@ -168,6 +168,27 @@ def main() -> None:  # pragma: no cover - UI entry point
         results_path = Path(EVAL_RESULTS_PATH)
         if results_path.exists():
             results = json.loads(results_path.read_text())
+            # New multi-mode shape: {"means_by_mode": {...}, "modes": {<mode>: {...}}}.
+            # Show a per-mode comparison up front, then let the user drill into one
+            # mode using the same single-run rendering below.
+            if "means_by_mode" in results:
+                means_by_mode = results["means_by_mode"]
+                st.subheader("Mode comparison")
+                st.caption("Mean of each metric per retrieval mode — the head-to-head view.")
+                metric_names = sorted({m for v in means_by_mode.values() for m in v})
+                import pandas as pd
+
+                chart = {
+                    metric: [means_by_mode[mode].get(metric) for mode in means_by_mode]
+                    for metric in metric_names
+                }
+                st.bar_chart(pd.DataFrame(chart, index=list(means_by_mode.keys())))
+                mode_results = results.get("modes", {})
+                if mode_results:
+                    selected = st.selectbox("Drill into mode", list(mode_results.keys()))
+                    results = mode_results[selected]
+                else:
+                    results = {}
             rows = eval_rows(results)
             if rows:
                 st.subheader("Overall metrics")

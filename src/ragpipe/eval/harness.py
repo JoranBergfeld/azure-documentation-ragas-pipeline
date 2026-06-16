@@ -10,9 +10,11 @@ from ragpipe.eval.testset import TestItem
 from ragpipe.models import PipelineState
 
 
-# Retrieval stages whose context sets can be scored independently. dense/bm25 run
-# in parallel; fused is their RRF merge; reranked is the final precision pass. The
-# answer-level metrics (faithfulness, relevancy) only exist after generation.
+# Default stage set for the optional per-stage context sweep. Substrates now name
+# their own stages dynamically (run_harness reads state.stages), so this tuple is
+# only the default for the hybrid contextual/baseline modes; later substrates
+# (RAPTOR levels, graph local/global) name different stages. The answer-level
+# metrics (faithfulness, relevancy) only exist after generation.
 RETRIEVAL_STAGES = ("dense", "bm25", "fused", "reranked")
 
 
