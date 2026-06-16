@@ -20,15 +20,27 @@ def _state() -> PipelineState:
         return Chunk(id=cid, title=f"Doc {cid}", url=f"http://{cid}", content="x", score=score)
 
     s = PipelineState(query="what is RRF?")
-    s.dense = [c("a", 0.8)]
-    s.bm25 = [c("b", 0.7)]
-    s.fused = [c("a", 0.5), c("b", 0.4)]
-    s.reranked = [c("a", 0.99)]
+    s.set_stage("dense", [c("a", 0.8)])
+    s.set_stage("bm25", [c("b", 0.7)])
+    s.set_stage("fused", [c("a", 0.5), c("b", 0.4)])
+    s.set_reranked([c("a", 0.99)])
     s.answer = "RRF merges ranked lists."
     s.faithfulness = 0.98
     s.attempt = 1
     s.low_confidence = False
     return s
+
+
+def _make_factory(pipeline_fn):
+    """Return a factory override that ignores mode and always uses pipeline_fn."""
+
+    async def factory(mode: str):
+        return pipeline_fn
+
+    def get_factory():
+        return factory
+
+    return get_factory
 
 
 def test_health_ok(client):
@@ -41,7 +53,7 @@ def test_run_returns_answer_and_stages(client):
     async def fake_pipeline(query: str) -> PipelineState:
         return _state()
 
-    api.app.dependency_overrides[api.get_pipeline_fn] = lambda: fake_pipeline
+    api.app.dependency_overrides[api.get_pipeline_fn_for_mode] = _make_factory(fake_pipeline)
     try:
         res = client.post("/run", json={"query": "what is RRF?"})
     finally:
@@ -84,7 +96,7 @@ def test_run_reports_abstention():
     async def fake_pipeline(q):
         return PipelineState(query=q, answer="abstained text", abstained=True, low_confidence=True)
 
-    api.app.dependency_overrides[api.get_pipeline_fn] = lambda: fake_pipeline
+    api.app.dependency_overrides[api.get_pipeline_fn_for_mode] = _make_factory(fake_pipeline)
     try:
         resp = TestClient(api.app).post("/run", json={"query": "x"})
         assert resp.status_code == 200
@@ -98,3 +110,74 @@ def test_eval_missing_file_returns_empty(client, tmp_path, monkeypatch):
     res = client.get("/eval")
     assert res.status_code == 200
     assert res.json() == {"overall": [], "perStage": {}, "nRecords": 0}
+
+
+# --- new tests for mode param and /compare ---
+
+
+def _fake_state(mode: str) -> PipelineState:
+    s = PipelineState(query="q")
+    s.set_stage("fused", [Chunk(id="1", title="t", url="u", content="c")])
+    s.set_reranked([Chunk(id="1", title="t", url="u", content="c")])
+    s.answer = f"answer-{mode}"
+    s.faithfulness = 0.9
+    return s
+
+
+def test_run_with_explicit_mode():
+    async def fake_pipeline(q: str) -> PipelineState:
+        return _fake_state("baseline")
+
+    api.app.dependency_overrides[api.get_pipeline_fn_for_mode] = _make_factory(fake_pipeline)
+    try:
+        resp = TestClient(api.app).post("/run", json={"query": "q", "mode": "baseline"})
+    finally:
+        api.app.dependency_overrides.clear()
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["mode"] == "baseline"
+    assert "answer" in body
+
+
+def test_compare_runs_multiple_modes():
+    async def fake_factory(mode: str):
+        async def fn(q: str) -> PipelineState:
+            return _fake_state(mode)
+
+        return fn
+
+    api.app.dependency_overrides[api.get_pipeline_fn_for_mode] = lambda: fake_factory
+    try:
+        resp = TestClient(api.app).post(
+            "/compare", json={"query": "q", "modes": ["baseline", "contextual"]}
+        )
+    finally:
+        api.app.dependency_overrides.clear()
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert {r["mode"] for r in body["results"]} == {"baseline", "contextual"}
+    assert all("answer" in r for r in body["results"])
+
+
+def test_eval_new_shape(client, tmp_path, monkeypatch):
+    results = {
+        "means_by_mode": {
+            "baseline": {"faithfulness": 0.8},
+            "contextual": {"faithfulness": 0.9},
+        },
+        "modes": {
+            "baseline": {},
+            "contextual": {},
+        },
+    }
+    f = tmp_path / "eval_results.json"
+    f.write_text(json.dumps(results))
+    monkeypatch.setattr(api, "EVAL_RESULTS_PATH", str(f))
+
+    res = client.get("/eval")
+    assert res.status_code == 200
+    body = res.json()
+    assert "meansByMode" in body
+    assert set(body["modes"]) == {"baseline", "contextual"}
