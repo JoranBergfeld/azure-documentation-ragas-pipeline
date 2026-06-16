@@ -62,12 +62,7 @@ async def run_harness(
     records: list[EvalRecord] = []
     for item in items:
         state = await pipeline_fn(item.question)
-        by_stage = {
-            "dense": state.dense,
-            "bm25": state.bm25,
-            "fused": state.fused,
-            "reranked": state.reranked,
-        }
+        by_stage = state.stages
         record = EvalRecord(
             question=item.question,
             answer=state.answer,
@@ -119,6 +114,11 @@ def aggregate_by_tag(records: list[EvalRecord]) -> dict[str, dict[str, float]]:
         for tag in r.tags or ("original",):
             groups.setdefault(tag, []).append(r)
     return {tag: aggregate(rs) for tag, rs in sorted(groups.items())}
+
+
+def aggregate_by_mode(records_by_mode: dict[str, list[EvalRecord]]) -> dict[str, dict[str, float]]:
+    """aggregate() per mode. Keys are mode names; values are the per-mode means."""
+    return {mode: aggregate(recs) for mode, recs in records_by_mode.items()}
 
 
 def coverage(records: list[EvalRecord]) -> dict[str, tuple[int, int]]:

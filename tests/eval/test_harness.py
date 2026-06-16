@@ -3,6 +3,7 @@ import pytest
 from ragpipe.eval.harness import (
     EvalRecord,
     aggregate,
+    aggregate_by_mode,
     parse_stage_metric,
     run_harness,
     stage_metric_key,
@@ -65,10 +66,10 @@ async def test_run_harness_builds_records_from_pipeline_and_evaluator():
     async def fake_pipeline(q):
         s = PipelineState(query=q)
         s.answer = "a1"
-        s.dense = [Chunk(id="d", title="t", url="u", content="dense-ctx")]
-        s.bm25 = [Chunk(id="b", title="t", url="u", content="bm25-ctx")]
-        s.fused = [Chunk(id="f", title="t", url="u", content="fused-ctx")]
-        s.reranked = [Chunk(id="c", title="t", url="u", content="ctx-content")]
+        s.set_stage("dense", [Chunk(id="d", title="t", url="u", content="dense-ctx")])
+        s.set_stage("bm25", [Chunk(id="b", title="t", url="u", content="bm25-ctx")])
+        s.set_stage("fused", [Chunk(id="f", title="t", url="u", content="fused-ctx")])
+        s.set_reranked([Chunk(id="c", title="t", url="u", content="ctx-content")])
         return s
 
     async def fake_evaluator(records):
@@ -110,3 +111,29 @@ def test_aggregate_reports_abstention_rate():
     r2 = EvalRecord(question="b", answer="y", contexts=[], ground_truth="g",
                     metrics={"abstained": 0.0})
     assert aggregate([r1, r2])["abstained"] == 0.5
+
+
+@pytest.mark.asyncio
+async def test_run_harness_reads_dynamic_stages():
+    async def pipeline_fn(q):
+        s = PipelineState(query=q)
+        s.set_stage("local", [Chunk(id="1", title="", url="http://x", content="c")])
+        s.set_reranked([Chunk(id="1", title="", url="http://x", content="c")])
+        s.answer = "a"
+        return s
+    async def evaluator_fn(records):
+        return records
+    items = [TestItem(question="q", ground_truth="g", ground_truth_context="http://x")]
+    recs = await run_harness(items, pipeline_fn, evaluator_fn)
+    assert "local" in recs[0].stage_urls
+    assert "reranked" in recs[0].stage_urls
+
+
+def test_aggregate_by_mode():
+    a = EvalRecord(question="q", answer="a", contexts=[], ground_truth="g")
+    a.metrics["hit_rate@reranked"] = 1.0
+    b = EvalRecord(question="q", answer="a", contexts=[], ground_truth="g")
+    b.metrics["hit_rate@reranked"] = 0.0
+    out = aggregate_by_mode({"baseline": [a], "contextual": [b]})
+    assert out["baseline"]["hit_rate@reranked"] == 1.0
+    assert out["contextual"]["hit_rate@reranked"] == 0.0
