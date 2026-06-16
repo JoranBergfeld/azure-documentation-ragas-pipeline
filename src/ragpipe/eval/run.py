@@ -1,14 +1,16 @@
 """Offline evaluation entry point: python -m ragpipe.eval.run"""
 from __future__ import annotations
 
+import argparse
 import asyncio
 import json
 import math
 
 from ragpipe.app_wiring import build_pipeline_fn
-from ragpipe.config import Settings, TestsetMode
+from ragpipe.config import RetrievalMode, Settings, TestsetMode
 from ragpipe.eval.harness import (
     aggregate,
+    aggregate_by_mode,
     aggregate_by_tag,
     build_per_stage_context_evaluator,
     build_ragas_evaluator,
@@ -45,38 +47,48 @@ def _sample_corpus_docs(settings, limit: int = 40) -> list[dict]:  # pragma: no 
     return [{"content": r["content"], "url": r.get("url", "")} for r in results]
 
 
-def main() -> None:  # pragma: no cover - integration entry point
-    settings = Settings.from_env()
+def _load_items(settings):  # pragma: no cover
+    """Load (or generate) the testset items based on settings.testset_mode."""
     if settings.testset_mode is TestsetMode.SYNTHETIC:
         print("TESTSET_MODE=synthetic: generating a test set from indexed corpus…")
         synthetic_fn = build_synthetic_generator(settings, _sample_corpus_docs(settings))
-        items = load_testset(settings.testset_mode, synthetic_fn=synthetic_fn)
-    else:
-        items = load_testset(settings.testset_mode)
-    pipeline_fn = build_pipeline_fn(settings)
+        return load_testset(settings.testset_mode, synthetic_fn=synthetic_fn)
+    return load_testset(settings.testset_mode)
+
+
+def main() -> None:  # pragma: no cover
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--modes", default="contextual,baseline")
+    args = parser.parse_args()
+    modes = [RetrievalMode(m.strip()) for m in args.modes.split(",") if m.strip()]
+
+    settings = Settings.from_env()
+    items = _load_items(settings)
     evaluator_fn = build_ragas_evaluator(settings)
 
-    records = asyncio.run(run_harness(items, pipeline_fn, evaluator_fn))
-
-    if settings.per_stage_metrics:
-        print("Per-stage metrics enabled: scoring context_precision/recall per stage…")
-        per_stage_fn = build_per_stage_context_evaluator(settings)
-        records = asyncio.run(per_stage_fn(records))
-
-    means = aggregate(records)
-    means_by_tag = aggregate_by_tag(records)
-    cov = {k: {"valid": v, "total": t} for k, (v, t) in coverage(records).items()}
-    payload = _clean(
-        {
-            "means": means,
-            "means_by_tag": means_by_tag,
-            "coverage": cov,
+    results_by_mode: dict[str, dict] = {}
+    records_by_mode: dict[str, list] = {}
+    for mode in modes:
+        print(f"=== mode: {mode.value} ===")
+        pipeline_fn = build_pipeline_fn(settings, mode=mode)
+        records = asyncio.run(run_harness(items, pipeline_fn, evaluator_fn))
+        if settings.per_stage_metrics:
+            records = asyncio.run(build_per_stage_context_evaluator(settings)(records))
+        records_by_mode[mode.value] = records
+        results_by_mode[mode.value] = {
+            "means": aggregate(records),
+            "means_by_tag": aggregate_by_tag(records),
+            "coverage": {k: {"valid": v, "total": t} for k, (v, t) in coverage(records).items()},
             "records": [r.__dict__ for r in records],
         }
-    )
+
+    payload = _clean({
+        "means_by_mode": aggregate_by_mode(records_by_mode),
+        "modes": results_by_mode,
+    })
     with open("eval_results.json", "w") as f:
         json.dump(payload, f, indent=2, allow_nan=False)
-    print(json.dumps({"means": means, "means_by_tag": means_by_tag, "coverage": cov}, indent=2))
+    print(json.dumps({"means_by_mode": payload["means_by_mode"]}, indent=2))
 
 
 if __name__ == "__main__":  # pragma: no cover
