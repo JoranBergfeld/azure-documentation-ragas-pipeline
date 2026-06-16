@@ -20,7 +20,16 @@ SEMANTIC_CONFIG_NAME = "default-semantic"
 VECTOR_PROFILE_NAME = "default-vector"
 
 
-def build_index(name: str, vector_dimensions: int) -> SearchIndex:
+def build_index(name: str, vector_dimensions: int, include_context: bool = True) -> SearchIndex:
+    """Build an Azure AI Search index schema.
+
+    When ``include_context`` is True (default), the ``context`` field is
+    searchable for BM25 and included in the semantic config's prioritized
+    content fields -- matching the contextual-decoration pipeline (ADR-0003).
+    When False, ``context`` is still present in the schema (so documents with
+    an empty context field don't error on upload) but is NOT wired into BM25
+    or semantic config -- the baseline plain-chunk index.
+    """
     fields = [
         # filterable=True is required: the semantic reranker restricts to the
         # RRF-fused candidate set via a search.in(id, ...) $filter expression.
@@ -30,9 +39,12 @@ def build_index(name: str, vector_dimensions: int) -> SearchIndex:
         SimpleField(name="chunk_id", type=SearchFieldDataType.Int32),
         SearchableField(name="content", type=SearchFieldDataType.String),
         # Retrieval-only decoration: breadcrumb + generated situating context
-        # (ADR-0003). Searchable for BM25 and in the semantic config, but never
-        # returned into generator prompts or the faithfulness judge.
-        SearchableField(name="context", type=SearchFieldDataType.String),
+        # (ADR-0003). When include_context=True, searchable for BM25 and in the
+        # semantic config. When False, the field is still defined so docs with an
+        # empty context field upload without error, but it is not searched.
+        SearchableField(name="context", type=SearchFieldDataType.String)
+        if include_context
+        else SimpleField(name="context", type=SearchFieldDataType.String),
         SearchField(
             name="content_vector",
             type=SearchFieldDataType.Collection(SearchFieldDataType.Single),
@@ -49,16 +61,16 @@ def build_index(name: str, vector_dimensions: int) -> SearchIndex:
             )
         ],
     )
+    content_fields = [SemanticField(field_name="content")]
+    if include_context:
+        content_fields.append(SemanticField(field_name="context"))
     semantic = SemanticSearch(
         configurations=[
             SemanticConfiguration(
                 name=SEMANTIC_CONFIG_NAME,
                 prioritized_fields=SemanticPrioritizedFields(
                     title_field=SemanticField(field_name="title"),
-                    content_fields=[
-                        SemanticField(field_name="content"),
-                        SemanticField(field_name="context"),
-                    ],
+                    content_fields=content_fields,
                 ),
             )
         ]

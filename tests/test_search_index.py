@@ -25,3 +25,18 @@ def test_semantic_config_includes_context_after_content():
     config = index.semantic_search.configurations[0]
     content_fields = [f.field_name for f in config.prioritized_fields.content_fields]
     assert content_fields == ["content", "context"]
+
+
+def test_include_context_false_omits_context_from_bm25_and_semantic():
+    index = build_index("baseline", vector_dimensions=2, include_context=False)
+    # context field is still present so docs with empty context upload without error
+    names = {f.name for f in index.fields}
+    assert "context" in names
+    # but it must NOT be searchable (i.e. not wired into BM25)
+    ctx_field = next(f for f in index.fields if f.name == "context")
+    assert not getattr(ctx_field, "searchable", False)
+    # and must NOT appear in the semantic config's content fields
+    config = index.semantic_search.configurations[0]
+    sem_content_names = [f.field_name for f in config.prioritized_fields.content_fields]
+    assert "context" not in sem_content_names
+    assert "content" in sem_content_names

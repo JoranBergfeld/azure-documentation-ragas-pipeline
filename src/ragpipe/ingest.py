@@ -74,6 +74,38 @@ def build_documents(
     ]
 
 
+def build_baseline_documents(
+    pages: list[dict[str, Any]],
+    embed_fn: Callable[[str], list[float]],
+    max_chars: int = 2000,
+    overlap: int = 200,
+) -> list[dict[str, Any]]:
+    """Build plain (no contextual decoration) documents for the baseline index.
+
+    Mirrors build_documents field shapes but skips the ContextGenerator entirely:
+    - ``context`` field is empty string
+    - ``content_vector`` embeds raw ``content`` only (not context + content)
+    """
+    docs: list[dict[str, Any]] = []
+    for page in pages:
+        for i, chunk in enumerate(
+            chunk_markdown(page["markdown"], page["title"], max_chars=max_chars, overlap=overlap)
+        ):
+            content = chunk.text
+            docs.append(
+                {
+                    "id": _doc_id(page["url"], i),
+                    "title": page["title"],
+                    "url": page["url"],
+                    "chunk_id": i,
+                    "content": content,
+                    "context": "",
+                    "content_vector": embed_fn(content),
+                }
+            )
+    return docs
+
+
 def fetch_pages(
     urls: list[str], max_workers: int = 6, max_retries: int = 4
 ) -> list[dict[str, Any]]:  # pragma: no cover - network
@@ -214,6 +246,62 @@ def main(limit: int | None = None) -> None:  # pragma: no cover - integration en
     print(
         f"Uploaded {len(docs)} chunks from {len(pages)} pages "
         f"to index '{settings.search_index}' (pruned {pruned} stale chunks)."
+    )
+
+
+def build_baseline(settings: Any, limit: int | None = None) -> None:  # pragma: no cover
+    """Ingest the plain-chunk baseline index (no contextual decoration).
+
+    Mirrors main() but uses build_baseline_documents and targets
+    settings.baseline_index with include_context=False.
+    """
+    import yaml
+    from azure.identity import DefaultAzureCredential
+    from azure.search.documents import SearchClient
+    from azure.search.documents.indexes import SearchIndexClient
+
+    from ragpipe.embeddings import build_batch_embed_fn
+
+    with open("data/corpus_sources.yaml") as f:
+        urls = yaml.safe_load(f)["sources"]
+    if limit is not None:
+        urls = urls[:limit]
+
+    cred = DefaultAzureCredential()
+    embed_batch = build_batch_embed_fn(settings)
+
+    pages = fetch_pages(urls)
+    if not pages:
+        raise SystemExit("No pages fetched; nothing to ingest.")
+
+    first_vec = embed_batch([pages[0]["markdown"][:100]])[0]
+    dims = len(first_vec)
+
+    index_client = SearchIndexClient(settings.search_endpoint, cred)
+    # Reuse create_index (which calls build_index internally) but we need
+    # include_context=False. create_index is a thin wrapper; call build_index
+    # directly and use create_or_update_index.
+    from ragpipe.search_index import build_index
+
+    index_client.create_or_update_index(
+        build_index(settings.baseline_index, dims, include_context=False)
+    )
+
+    # Build docs: embed_fn takes a single string; wrap embed_batch for this.
+    def _embed_one(text: str) -> list[float]:
+        return embed_batch([text])[0]
+
+    docs = build_baseline_documents(pages, embed_fn=_embed_one)
+
+    search_client = SearchClient(settings.search_endpoint, settings.baseline_index, cred)
+    _upload_in_batches(search_client, docs)
+    if limit is not None:
+        print(f"Uploaded {len(docs)} chunks from {len(pages)} pages (limit={limit}, prune skipped).")
+        return
+    pruned = prune_stale_documents(search_client, fresh_ids={d["id"] for d in docs})
+    print(
+        f"Uploaded {len(docs)} chunks from {len(pages)} pages "
+        f"to index '{settings.baseline_index}' (pruned {pruned} stale chunks)."
     )
 
 
