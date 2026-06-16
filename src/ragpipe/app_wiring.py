@@ -1,35 +1,28 @@
 from __future__ import annotations
 
-from typing import Any, Awaitable, Callable
+from typing import Awaitable, Callable
 
 from ragpipe.config import Settings
 from ragpipe.models import PipelineState
 from ragpipe.workflow import PipelineDeps, run_pipeline
 
 
-def make_deps(
-    settings: Settings,
-    dense: Any,
-    bm25: Any,
-    reranker: Any,
-    generator: Any,
-    scorer: Any,
-) -> PipelineDeps:
+def make_deps(settings, retrieve, reranker, generator, scorer) -> PipelineDeps:
     return PipelineDeps(
-        dense=lambda q: dense.retrieve(q),
-        bm25=lambda q: bm25.retrieve(q),
+        retrieve=retrieve,
         rerank=lambda q, fused, k: reranker.rerank(q, fused, top_k=k),
         generate=lambda q, chunks, prev: generator.generate(q, chunks, prev),
         score=lambda q, a, c: scorer.score(q, a, c),
         threshold=settings.faithfulness_threshold,
         max_retries=settings.max_retries,
-        rrf_k=settings.rrf_k,
         top_k=settings.top_k,
+        candidate_pool=settings.candidate_pool,
     )
 
 
 def build_pipeline_fn(
     settings: Settings,
+    mode=None,
 ) -> Callable[[str], Awaitable[PipelineState]]:  # pragma: no cover - live wiring
     from functools import lru_cache
 
@@ -37,19 +30,18 @@ def build_pipeline_fn(
     from azure.search.documents import SearchClient
     from agent_framework.foundry import FoundryAgent
 
+    from ragpipe.config import RetrievalMode
     from ragpipe.embeddings import build_embed_fn
     from ragpipe.generate import Generator
     from ragpipe.guardrail import FaithfulnessScorer, build_ragas_faithfulness
-    from ragpipe.retrieval.bm25 import BM25Retriever
-    from ragpipe.retrieval.dense import DenseRetriever
+    from ragpipe.retrieval.registry import build_substrate
     from ragpipe.retrieval.rerank import SemanticReranker
     from ragpipe.search_index import SEMANTIC_CONFIG_NAME
 
+    mode = mode or settings.default_mode
+    if isinstance(mode, str):
+        mode = RetrievalMode(mode)
     cred = DefaultAzureCredential()
-    search = SearchClient(settings.search_endpoint, settings.search_index, cred)
-
-    # One embedding per query string, shared by the dense leg and the hybrid
-    # rerank call (and across guardrail retries).
     embed_raw = build_embed_fn(settings)
 
     @lru_cache(maxsize=128)
@@ -59,6 +51,33 @@ def build_pipeline_fn(
     def embed(text: str) -> list[float]:
         return list(_embed_cached(text))
 
+    _clients: dict[str, SearchClient] = {}
+
+    class _Ctx:
+        def search_client(self, index: str):
+            if index not in _clients:
+                _clients[index] = SearchClient(settings.search_endpoint, index, cred)
+            return _clients[index]
+
+        def embed(self, text: str):
+            return embed(text)
+
+    ctx = _Ctx()
+    substrate = build_substrate(mode, settings, ctx)
+
+    # The reranker re-scores within whatever the substrate returns, using the
+    # substrate's own index for the hybrid stage-1 retrieval.
+    rerank_index_attr = {
+        "contextual": "search_index",
+        "baseline": "baseline_index",
+    }.get(substrate.name, "search_index")
+    reranker = SemanticReranker(
+        ctx.search_client(getattr(settings, rerank_index_attr)),
+        SEMANTIC_CONFIG_NAME,
+        settings.top_k,
+        embed_fn=embed,
+    )
+
     agent = FoundryAgent(
         project_endpoint=settings.foundry_project_endpoint,
         agent_name=settings.generator_agent_name,
@@ -67,13 +86,8 @@ def build_pipeline_fn(
     )
     deps = make_deps(
         settings,
-        # Legs fetch the wider candidate pool; rerank narrows to top_k (widened
-        # per retry by the workflow).
-        dense=DenseRetriever(search, embed, settings.candidate_pool),
-        bm25=BM25Retriever(search, settings.candidate_pool),
-        reranker=SemanticReranker(
-            search, SEMANTIC_CONFIG_NAME, settings.top_k, embed_fn=embed
-        ),
+        retrieve=substrate.retrieve,
+        reranker=reranker,
         generator=Generator(agent),
         scorer=FaithfulnessScorer(build_ragas_faithfulness(settings)),
     )
