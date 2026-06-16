@@ -1,6 +1,7 @@
 import pytest
 
 from ragpipe.models import Chunk, PipelineState
+from ragpipe.retrieval.substrate import RetrievalResult
 from ragpipe.workflow import ABSTENTION_ANSWER, PipelineDeps, run_pipeline
 
 
@@ -8,16 +9,26 @@ def _chunk(cid):
     return Chunk(id=cid, title=cid, url=f"http://{cid}", content=f"content-{cid}")
 
 
+def _fake_retrieve(chunks):
+    async def retrieve(query, k):
+        return RetrievalResult(
+            candidates=chunks,
+            stages={"dense": chunks, "bm25": [], "fused": chunks},
+        )
+    return retrieve
+
+
 def _deps(score_sequence, rerank_calls=None, generate_calls=None):
     """Deps whose scorer returns scores from a sequence per attempt; optionally
     records the requested top_k per rerank call and the previous_answer per
     generate call."""
     scores = iter(score_sequence)
+    chunks = [_chunk("a"), _chunk("b"), _chunk("c")]
 
-    def rerank(q, fused, k):
+    def rerank(q, candidates, k):
         if rerank_calls is not None:
             rerank_calls.append(k)
-        return fused[:k]
+        return candidates[:k]
 
     def generate(q, chunks, previous_answer):
         if generate_calls is not None:
@@ -25,8 +36,7 @@ def _deps(score_sequence, rerank_calls=None, generate_calls=None):
         return f"answer for {q}"
 
     return PipelineDeps(
-        dense=lambda q: [_chunk("a"), _chunk("b")],
-        bm25=lambda q: [_chunk("b"), _chunk("c")],
+        retrieve=_fake_retrieve(chunks),
         rerank=rerank,
         generate=generate,
         score=lambda q, answer, chunks: next(scores),
@@ -47,7 +57,10 @@ async def test_pipeline_passes_first_try():
     assert state.low_confidence is False
     assert state.abstained is False
     stages = [e.stage for e in state.trace]
-    assert stages[:4] == ["dense", "bm25", "rrf", "rerank"]
+    assert stages[:4] == ["dense", "bm25", "fused", "rerank"]
+    # substrate stages are populated and reranked is mirrored into stages
+    assert len(state.stages["fused"]) > 0
+    assert state.reranked == state.stages["reranked"]
 
 
 @pytest.mark.asyncio
