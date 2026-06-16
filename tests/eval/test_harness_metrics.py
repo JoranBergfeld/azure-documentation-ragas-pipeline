@@ -11,10 +11,12 @@ def _chunk(cid: str, url: str) -> Chunk:
 
 def _state(query: str) -> PipelineState:
     s = PipelineState(query=query)
-    s.dense = [_chunk("d1", "https://learn.microsoft.com/en-us/azure/right")]
-    s.bm25 = [_chunk("b1", "https://learn.microsoft.com/azure/wrong")]
-    s.fused = s.dense + s.bm25
-    s.reranked = [s.bm25[0], s.dense[0]]  # right page at rank 2
+    dense = [_chunk("d1", "https://learn.microsoft.com/en-us/azure/right")]
+    bm25 = [_chunk("b1", "https://learn.microsoft.com/azure/wrong")]
+    s.set_stage("dense", dense)
+    s.set_stage("bm25", bm25)
+    s.set_stage("fused", dense + bm25)
+    s.set_reranked([bm25[0], dense[0]])  # right page at rank 2
     s.answer = "an answer"
     return s
 
