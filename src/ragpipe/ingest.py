@@ -249,6 +249,138 @@ def main(limit: int | None = None) -> None:  # pragma: no cover - integration en
     )
 
 
+def raptor_summary_documents(nodes: list[Any]) -> list[dict[str, Any]]:
+    """Shape RAPTOR summary nodes into the same field layout as leaf docs, plus `level`.
+
+    Summary nodes don't come from a URL or a discrete integer chunk, so `url` is
+    empty and `chunk_id` is 0. The `level` field (>= 1) lets callers distinguish
+    summaries from leaves in a mixed index.
+    """
+    return [
+        {
+            "id": node.id,
+            "title": f"RAPTOR summary L{node.level}",
+            "url": "",
+            "chunk_id": 0,
+            "content": node.text,
+            "context": "",
+            "content_vector": node.embedding,
+            "level": node.level,
+        }
+        for node in nodes
+    ]
+
+
+def build_raptor(settings: Any, limit: int | None = None) -> None:  # pragma: no cover
+    """Ingest the RAPTOR SAC index: leaf docs with level=0 plus RAPTOR summary nodes.
+
+    Mirrors build_baseline but builds the full RAPTOR tree on top of the SAC
+    (situating-context + embedding) leaf docs and uploads both leaves and summaries
+    to settings.raptor_sac_index with include_level=True.
+    """
+    import sys
+
+    import yaml
+    from azure.identity import DefaultAzureCredential
+    from azure.search.documents import SearchClient
+    from azure.search.documents.indexes import SearchIndexClient
+
+    from ragpipe.context_gen import ContextGenerator, build_context_complete_fn
+    from ragpipe.embeddings import build_batch_embed_fn
+    from ragpipe.raptor import RaptorNode, build_raptor_tree
+    from ragpipe.search_index import build_index
+
+    with open("data/corpus_sources.yaml") as f:
+        urls = yaml.safe_load(f)["sources"]
+    if limit is not None:
+        urls = urls[:limit]
+
+    cred = DefaultAzureCredential()
+    embed_batch = build_batch_embed_fn(settings)
+    context_gen = ContextGenerator(
+        build_context_complete_fn(settings), model=settings.foundry_chat_model
+    )
+
+    pages = fetch_pages(urls)
+    if not pages:
+        raise SystemExit("No pages fetched; nothing to ingest.")
+
+    # 1. Build SAC leaf docs (same decoration as main())
+    leaf_docs = build_documents(pages, embed_batch_fn=embed_batch, context_fn=context_gen.generate)
+    if context_gen.fallback_count:
+        print(f"  context fallbacks (breadcrumb-only): {context_gen.fallback_count}", flush=True)
+    for d in leaf_docs:
+        d["level"] = 0
+
+    # 2. Wrap leaf docs as RaptorNode leaves
+    leaves = [
+        RaptorNode(id=d["id"], text=d["content"], level=0, embedding=d["content_vector"])
+        for d in leaf_docs
+    ]
+
+    # 3. Summarizer: bounded chat-completion, same client factory as context_gen.
+    #    Not content-address-cached (ADR-0005 style); would need a separate cache
+    #    keyed on cluster membership which changes every ingest. Acceptable for now.
+    complete_fn = build_context_complete_fn(settings)
+
+    SUMMARY_PROMPT = (
+        "You are a technical writer. Write a concise abstractive summary of the "
+        "following related Azure documentation passages. Capture the key concepts "
+        "and relationships. Reply with only the summary, no preamble.\n\n{passages}"
+    )
+
+    def summarize_fn(texts: list[str]) -> str:
+        joined = "\n\n---\n\n".join(texts)
+        prompt = SUMMARY_PROMPT.format(passages=joined)
+        for attempt in range(settings.max_retries + 1):
+            try:
+                return complete_fn(prompt).strip()
+            except Exception as exc:  # noqa: BLE001
+                print(
+                    f"summarize_fn attempt {attempt}: {type(exc).__name__}: {exc}",
+                    file=sys.stderr,
+                    flush=True,
+                )
+        return " ".join(texts[:3])[:500]  # last-resort truncated concat
+
+    # 4. Build RAPTOR tree
+    print(f"Building RAPTOR tree from {len(leaves)} leaves (max_levels={settings.raptor_max_levels})…", flush=True)
+    summaries = build_raptor_tree(
+        leaves,
+        summarize_fn=summarize_fn,
+        embed_batch_fn=embed_batch,
+        max_levels=settings.raptor_max_levels,
+    )
+    print(f"  RAPTOR produced {len(summaries)} summary nodes.", flush=True)
+
+    # 5. Create/update the RAPTOR SAC index with include_level=True
+    dims = len(leaf_docs[0]["content_vector"])
+    index_client = SearchIndexClient(settings.search_endpoint, cred)
+    index_client.create_or_update_index(
+        build_index(settings.raptor_sac_index, dims, include_context=True, include_level=True)
+    )
+
+    # 6. Upload leaves + summaries; prune stale (skip on partial ingest)
+    docs = leaf_docs + raptor_summary_documents(summaries)
+    search_client = SearchClient(settings.search_endpoint, settings.raptor_sac_index, cred)
+    _upload_in_batches(search_client, docs)
+
+    if limit is not None:
+        print(
+            f"Uploaded {len(leaf_docs)} leaves + {len(summaries)} summary nodes "
+            f"to index '{settings.raptor_sac_index}' (limit={limit}, prune skipped).",
+            flush=True,
+        )
+        return
+
+    pruned = prune_stale_documents(search_client, fresh_ids={d["id"] for d in docs})
+    print(
+        f"Uploaded {len(leaf_docs)} leaves + {len(summaries)} summary nodes "
+        f"to index '{settings.raptor_sac_index}' (pruned {pruned} stale).",
+        flush=True,
+    )
+
+
 def build_baseline(settings: Any, limit: int | None = None) -> None:  # pragma: no cover
     """Ingest the plain-chunk baseline index (no contextual decoration).
 
