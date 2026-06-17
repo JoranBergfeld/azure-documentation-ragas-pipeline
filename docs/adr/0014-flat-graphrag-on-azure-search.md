@@ -1,4 +1,4 @@
-# 0013 — Flat GraphRAG on Azure AI Search (no graph database)
+# 0014 — Flat GraphRAG on Azure AI Search (no graph database)
 
 **Status:** Accepted (2026-06-16)
 

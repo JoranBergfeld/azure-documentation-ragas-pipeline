@@ -37,19 +37,19 @@
 ## Task 1: ADRs for the five load-bearing decisions
 
 **Files:**
-- Create: `docs/adr/0011-retrieval-substrate-seam.md`
-- Create: `docs/adr/0012-raptor-collapsed-tree-on-azure-search.md`
-- Create: `docs/adr/0013-flat-graphrag-on-azure-search.md`
-- Create: `docs/adr/0014-agentic-retrieval-wrapper.md`
-- Create: `docs/adr/0015-multi-mode-evaluation-axis.md`
+- Create: `docs/adr/0012-retrieval-substrate-seam.md`
+- Create: `docs/adr/0013-raptor-collapsed-tree-on-azure-search.md`
+- Create: `docs/adr/0014-flat-graphrag-on-azure-search.md`
+- Create: `docs/adr/0015-agentic-retrieval-wrapper.md`
+- Create: `docs/adr/0016-multi-mode-evaluation-axis.md`
 
 - [ ] **Step 1: Write the five ADRs** using the repo's Nygard + mandatory Sources format (see `docs/adr/README.md` and any existing ADR for the exact section layout: Status / Context / Decision / Consequences / Sources). Content for each is the corresponding numbered subsection of `docs/superpowers/specs/2026-06-16-multi-substrate-retrieval-design.md` (§13 lists them; the design body §1–§9 and Rejected alternatives supply Context/Decision/Consequences; the spec's Sources section supplies citations). Mark all five `Status: Accepted`.
 
 - [ ] **Step 2: Commit**
 
 ```bash
-git add docs/adr/0011-retrieval-substrate-seam.md docs/adr/0012-raptor-collapsed-tree-on-azure-search.md docs/adr/0013-flat-graphrag-on-azure-search.md docs/adr/0014-agentic-retrieval-wrapper.md docs/adr/0015-multi-mode-evaluation-axis.md
-git commit -m "docs(adr): 0011-0015 for multi-substrate retrieval"
+git add docs/adr/0012-retrieval-substrate-seam.md docs/adr/0013-raptor-collapsed-tree-on-azure-search.md docs/adr/0014-flat-graphrag-on-azure-search.md docs/adr/0015-agentic-retrieval-wrapper.md docs/adr/0016-multi-mode-evaluation-axis.md
+git commit -m "docs(adr): 0012-0016 for multi-substrate retrieval"
 ```
 
 ---
@@ -1036,7 +1036,7 @@ git commit -m "feat(ingest): baseline (plain-chunk) build path + index variant"
 - `uv run pytest tests/ -q` green; `uv run ruff check .` clean.
 - `contextual` and `baseline` modes both resolve through the registry and run end to end against fakes.
 - Harness, dashboard, and API all read stages dynamically; `/compare` returns per-mode results.
-- ADRs 0011-0015 committed.
+- ADRs 0012-0016 committed.
 - Live ingest of the `baseline` index and a live multi-mode eval are NOT run here (need Azure creds + cost); they are a morning checklist item. Document in the decision log.
 
 ## Self-review notes (for the author before execution)

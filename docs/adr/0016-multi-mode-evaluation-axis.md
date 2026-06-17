@@ -1,4 +1,4 @@
-# 0015 — Multi-mode evaluation axis
+# 0016 — Multi-mode evaluation axis
 
 **Status:** Accepted (2026-06-16)
 
@@ -34,7 +34,7 @@ meaningful. They should be shared.
    the richer picture.
 
 3. **Dynamic stage reading.** `RETRIEVAL_STAGES` stops being a fixed tuple. The harness
-   reads stage names from each record's `state.stages` keys (ADR-0011). Each mode's
+   reads stage names from each record's `state.stages` keys (ADR-0012). Each mode's
    stages are whatever that substrate named them; the harness reports stats for each.
    The `reranked` stage is the stable well-known name that the final per-mode summary
    always includes.

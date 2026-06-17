@@ -1,4 +1,4 @@
-# 0014 — Agentic retrieval as a composable wrapper
+# 0015 — Agentic retrieval as a composable wrapper
 
 **Status:** Accepted (2026-06-16)
 

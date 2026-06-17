@@ -273,15 +273,15 @@ Surfaces and eval get the mode axis in Phase 1; each later phase just registers 
 Written as the first step of Phase 1, before any substrate code, so the decision log
 exists before implementation:
 
-- `0011-retrieval-substrate-seam.md` — the `RetrievalSubstrate` interface, substrate-owned
+- `0012-retrieval-substrate-seam.md` — the `RetrievalSubstrate` interface, substrate-owned
   fusion, generalized `PipelineState` stages, mode registry.
-- `0012-raptor-collapsed-tree-on-azure-search.md` — RAPTOR summary nodes with a `level`
+- `0013-raptor-collapsed-tree-on-azure-search.md` — RAPTOR summary nodes with a `level`
   field, collapsed-tree retrieval, dedicated `raptor-sac` index (Foundry-binding rationale).
-- `0013-flat-graphrag-on-azure-search.md` — materialized graph as three flat indexes,
+- `0014-flat-graphrag-on-azure-search.md` — materialized graph as three flat indexes,
   in-memory adjacency, local/global search, no graph DB.
-- `0014-agentic-retrieval-wrapper.md` — agentic loop on Agent Framework over a common
+- `0015-agentic-retrieval-wrapper.md` — agentic loop on Agent Framework over a common
   substrate interface, bounded iterations, gate stays final arbiter.
-- `0015-multi-mode-evaluation-axis.md` — mode axis in the harness, deterministic URL-match
+- `0016-multi-mode-evaluation-axis.md` — mode axis in the harness, deterministic URL-match
   metrics as primary cross-mode signal, fair-comparison shared knobs.
 
 ## Rejected alternatives

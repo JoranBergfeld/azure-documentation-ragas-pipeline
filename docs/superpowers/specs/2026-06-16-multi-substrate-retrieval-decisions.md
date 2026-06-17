@@ -67,7 +67,7 @@ What got built (the seam + Baseline):
 - Harness reads stages dynamically + `aggregate_by_mode`; `run.py --modes` writes
   `eval_results.json` keyed by mode; dashboard + API (`/run?mode`, `/compare`, dual-shape
   `/eval`) updated. Baseline ingest path + `build_index(include_context=False)`.
-- ADRs 0011-0015.
+- ADRs 0012-0016.
 
 Decisions / deviations made during execution (your call to overrule any):
 - **Review approach:** I used full reviewer subagents for the substantive integration

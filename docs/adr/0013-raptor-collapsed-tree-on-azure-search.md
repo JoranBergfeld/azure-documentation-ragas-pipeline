@@ -1,4 +1,4 @@
-# 0012 — RAPTOR: collapsed-tree retrieval on Azure AI Search
+# 0013 — RAPTOR: collapsed-tree retrieval on Azure AI Search
 
 **Status:** Accepted (2026-06-16)
 

@@ -1,4 +1,4 @@
-# 0011 — Retrieval substrate seam
+# 0012 — Retrieval substrate seam
 
 **Status:** Accepted (2026-06-16)
 
