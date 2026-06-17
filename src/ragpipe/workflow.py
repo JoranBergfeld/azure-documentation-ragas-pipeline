@@ -6,11 +6,10 @@ from typing import Callable
 
 from ragpipe.guardrail import LoopDecision, decide_next
 from ragpipe.models import Chunk, PipelineState
-from ragpipe.retrieval.rrf import reciprocal_rank_fusion
+from ragpipe.retrieval.substrate import RetrievalResult
 
 # Callable stage signatures (sync or async tolerated via _maybe_await).
-DenseFn = Callable[[str], list[Chunk]]
-Bm25Fn = Callable[[str], list[Chunk]]
+RetrieveFn = Callable[[str, int], object]  # returns an awaitable RetrievalResult
 RerankFn = Callable[[str, list[Chunk], int], list[Chunk]]
 GenerateFn = Callable[[str, list[Chunk], str | None], object]
 ScoreFn = Callable[[str, str, list[Chunk]], object]
@@ -31,15 +30,14 @@ async def _maybe_await(value):
 
 @dataclass
 class PipelineDeps:
-    dense: DenseFn
-    bm25: Bm25Fn
+    retrieve: RetrieveFn
     rerank: RerankFn
     generate: GenerateFn
     score: ScoreFn
     threshold: float = 0.7
     max_retries: int = 2
-    rrf_k: int = 60
     top_k: int = 5
+    candidate_pool: int = 15
     # Each retry widens the rerank window by this many chunks: the most common
     # faithfulness failure is the needed chunk sitting just below the cut.
     rerank_widen_step: int = 3
@@ -48,19 +46,17 @@ class PipelineDeps:
 async def run_pipeline(query: str, deps: PipelineDeps) -> PipelineState:
     state = PipelineState(query=query)
 
-    state.dense = await _maybe_await(deps.dense(query))
-    state.add_trace("dense", {"ids": [c.id for c in state.dense]})
-    state.bm25 = await _maybe_await(deps.bm25(query))
-    state.add_trace("bm25", {"ids": [c.id for c in state.bm25]})
-
-    # Retrieval legs and fusion are fixed across attempts — compute once.
-    state.fused = reciprocal_rank_fusion(state.dense, state.bm25, k=deps.rrf_k)
-    state.add_trace("rrf", {"ids": [c.id for c in state.fused]})
+    result: RetrievalResult = await _maybe_await(deps.retrieve(query, deps.candidate_pool))
+    for name, chunks in result.stages.items():
+        state.set_stage(name, chunks)
+        state.add_trace(name, {"ids": [c.id for c in chunks]})
+    state.candidates = result.candidates
 
     previous_answer: str | None = None
     while True:
         k = deps.top_k + deps.rerank_widen_step * state.attempt
-        state.reranked = await _maybe_await(deps.rerank(query, state.fused, k))
+        reranked = await _maybe_await(deps.rerank(query, state.candidates, k))
+        state.set_reranked(reranked)
         state.add_trace(
             "rerank", {"ids": [c.id for c in state.reranked], "top_k": k}
         )

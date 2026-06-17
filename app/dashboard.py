@@ -23,9 +23,6 @@ def chunk_label(chunk: Any) -> str:
     return chunk.id
 
 
-_RETRIEVAL_STAGES = ("dense", "bm25", "fused", "reranked")
-
-
 def stage_chunk_tables(state: PipelineState) -> dict[str, list[dict[str, Any]]]:
     """Per retrieval stage, a ranked table of readable chunk rows for the Run tab.
 
@@ -33,14 +30,8 @@ def stage_chunk_tables(state: PipelineState) -> dict[str, list[dict[str, Any]]]:
     (not the opaque id) so you can see *which documents* each stage surfaced and
     how reranking reorders them.
     """
-    by_stage = {
-        "dense": state.dense,
-        "bm25": state.bm25,
-        "fused": state.fused,
-        "reranked": state.reranked,
-    }
     tables: dict[str, list[dict[str, Any]]] = {}
-    for label in _RETRIEVAL_STAGES:
+    for label, chunks in state.stages.items():
         tables[label] = [
             {
                 "rank": rank,
@@ -48,7 +39,7 @@ def stage_chunk_tables(state: PipelineState) -> dict[str, list[dict[str, Any]]]:
                 "score": round(c.score, 3),
                 "url": c.url,
             }
-            for rank, c in enumerate(by_stage[label], 1)
+            for rank, c in enumerate(chunks, 1)
         ]
     return tables
 
@@ -56,12 +47,7 @@ def stage_chunk_tables(state: PipelineState) -> dict[str, list[dict[str, Any]]]:
 def stage_rows(state: PipelineState) -> list[dict[str, Any]]:
     """One summary row per stage: chunk count + readable titles (not raw ids)."""
     rows: list[dict[str, Any]] = []
-    for label, chunks in [
-        ("dense", state.dense),
-        ("bm25", state.bm25),
-        ("fused", state.fused),
-        ("reranked", state.reranked),
-    ]:
+    for label, chunks in state.stages.items():
         titles = ", ".join(f"{chunk_label(c)} ({c.score:.2f})" for c in chunks)
         rows.append({"stage": label, "count": len(chunks), "detail": titles})
     rows.append({"stage": "answer", "count": "", "detail": state.answer})
@@ -167,8 +153,7 @@ def main() -> None:  # pragma: no cover - UI entry point
                 "order — watch fusion merge the two lists and rerank reorder them."
             )
             tables = stage_chunk_tables(state)
-            for label in ("dense", "bm25", "fused", "reranked"):
-                rows = tables[label]
+            for label, rows in tables.items():
                 with st.expander(f"{label} — {len(rows)} chunk(s)", expanded=label == "reranked"):
                     if rows:
                         st.table(rows)
@@ -183,6 +168,27 @@ def main() -> None:  # pragma: no cover - UI entry point
         results_path = Path(EVAL_RESULTS_PATH)
         if results_path.exists():
             results = json.loads(results_path.read_text())
+            # New multi-mode shape: {"means_by_mode": {...}, "modes": {<mode>: {...}}}.
+            # Show a per-mode comparison up front, then let the user drill into one
+            # mode using the same single-run rendering below.
+            if "means_by_mode" in results:
+                means_by_mode = results["means_by_mode"]
+                st.subheader("Mode comparison")
+                st.caption("Mean of each metric per retrieval mode — the head-to-head view.")
+                metric_names = sorted({m for v in means_by_mode.values() for m in v})
+                import pandas as pd
+
+                chart = {
+                    metric: [means_by_mode[mode].get(metric) for mode in means_by_mode]
+                    for metric in metric_names
+                }
+                st.bar_chart(pd.DataFrame(chart, index=list(means_by_mode.keys())))
+                mode_results = results.get("modes", {})
+                if mode_results:
+                    selected = st.selectbox("Drill into mode", list(mode_results.keys()))
+                    results = mode_results[selected]
+                else:
+                    results = {}
             rows = eval_rows(results)
             if rows:
                 st.subheader("Overall metrics")

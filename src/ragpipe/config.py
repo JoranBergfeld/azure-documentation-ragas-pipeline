@@ -12,6 +12,21 @@ class TestsetMode(str, Enum):
     SYNTHETIC = "synthetic"
 
 
+class RetrievalMode(str, Enum):
+    # Phase 1: the existing decorated index (default) and the new plain index.
+    CONTEXTUAL = "contextual"
+    BASELINE = "baseline"
+    BASELINE_AGENTIC = "baseline_agentic"
+    # Later phases register substrates for these; declared up front for a stable
+    # API surface and config.
+    RAPTOR_SAC = "raptor_sac"
+    RAPTOR_SAC_AGENTIC = "raptor_sac_agentic"
+    GRAPHRAG = "graphrag"
+    GRAPHRAG_AGENTIC = "graphrag_agentic"
+    COMBINED = "combined"
+    COMBINED_AGENTIC = "combined_agentic"
+
+
 def _require(name: str) -> str:
     value = os.environ.get(name)
     if not value:
@@ -45,6 +60,18 @@ class Settings:
     # Candidate pool per retrieval leg (dense/bm25) before RRF fusion. Wider than
     # top_k so guardrail retries can widen the rerank window over real candidates.
     candidate_pool: int = 15
+    # Per-substrate index names. `search_index` stays the default contextual index.
+    baseline_index: str = "baseline"
+    raptor_sac_index: str = "raptor-sac"
+    graph_entities_index: str = "graph-entities"
+    graph_relationships_index: str = "graph-relationships"
+    graph_communities_index: str = "graph-communities"
+    # Default mode for surfaces that don't specify one.
+    default_mode: RetrievalMode = RetrievalMode.CONTEXTUAL
+    # Bounds for later phases (declared now so config is stable).
+    agentic_max_iterations: int = 3
+    raptor_max_levels: int = 3
+    graph_community_levels: int = 1
 
     def __post_init__(self) -> None:
         if not (0.0 <= self.faithfulness_threshold <= 1.0):
@@ -82,4 +109,13 @@ class Settings:
             judge_model=os.environ.get("JUDGE_MODEL") or None,
             offline_judge_model=os.environ.get("OFFLINE_JUDGE_MODEL") or None,
             candidate_pool=int(os.environ.get("CANDIDATE_POOL", "15")),
+            baseline_index=os.environ.get("BASELINE_INDEX", "baseline"),
+            raptor_sac_index=os.environ.get("RAPTOR_SAC_INDEX", "raptor-sac"),
+            graph_entities_index=os.environ.get("GRAPH_ENTITIES_INDEX", "graph-entities"),
+            graph_relationships_index=os.environ.get("GRAPH_RELATIONSHIPS_INDEX", "graph-relationships"),
+            graph_communities_index=os.environ.get("GRAPH_COMMUNITIES_INDEX", "graph-communities"),
+            default_mode=RetrievalMode(os.environ.get("DEFAULT_MODE", "contextual")),
+            agentic_max_iterations=int(os.environ.get("AGENTIC_MAX_ITERATIONS", "3")),
+            raptor_max_levels=int(os.environ.get("RAPTOR_MAX_LEVELS", "3")),
+            graph_community_levels=int(os.environ.get("GRAPH_COMMUNITY_LEVELS", "1")),
         )

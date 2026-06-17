@@ -10,9 +10,11 @@ from ragpipe.eval.testset import TestItem
 from ragpipe.models import PipelineState
 
 
-# Retrieval stages whose context sets can be scored independently. dense/bm25 run
-# in parallel; fused is their RRF merge; reranked is the final precision pass. The
-# answer-level metrics (faithfulness, relevancy) only exist after generation.
+# Default stage set for the optional per-stage context sweep. Substrates now name
+# their own stages dynamically (run_harness reads state.stages), so this tuple is
+# only the default for the hybrid contextual/baseline modes; later substrates
+# (RAPTOR levels, graph local/global) name different stages. The answer-level
+# metrics (faithfulness, relevancy) only exist after generation.
 RETRIEVAL_STAGES = ("dense", "bm25", "fused", "reranked")
 
 
@@ -62,12 +64,7 @@ async def run_harness(
     records: list[EvalRecord] = []
     for item in items:
         state = await pipeline_fn(item.question)
-        by_stage = {
-            "dense": state.dense,
-            "bm25": state.bm25,
-            "fused": state.fused,
-            "reranked": state.reranked,
-        }
+        by_stage = state.stages
         record = EvalRecord(
             question=item.question,
             answer=state.answer,
@@ -119,6 +116,11 @@ def aggregate_by_tag(records: list[EvalRecord]) -> dict[str, dict[str, float]]:
         for tag in r.tags or ("original",):
             groups.setdefault(tag, []).append(r)
     return {tag: aggregate(rs) for tag, rs in sorted(groups.items())}
+
+
+def aggregate_by_mode(records_by_mode: dict[str, list[EvalRecord]]) -> dict[str, dict[str, float]]:
+    """aggregate() per mode. Keys are mode names; values are the per-mode means."""
+    return {mode: aggregate(recs) for mode, recs in records_by_mode.items()}
 
 
 def coverage(records: list[EvalRecord]) -> dict[str, tuple[int, int]]:

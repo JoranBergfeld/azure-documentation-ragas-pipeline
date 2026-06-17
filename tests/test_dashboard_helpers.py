@@ -10,10 +10,10 @@ from app.dashboard import (
 
 def _state() -> PipelineState:
     state = PipelineState(query="q")
-    state.dense = [Chunk(id="d1", title="Dense Doc", url="http://d", content="x", score=0.5)]
-    state.bm25 = [Chunk(id="b1", title="BM25 Doc", url="http://b", content="y", score=0.8)]
-    state.fused = [Chunk(id="f1", title="Fused Doc", url="http://f", content="z", score=0.7)]
-    state.reranked = [Chunk(id="r1", title="Reranked Doc", url="http://r", content="w", score=3.2)]
+    state.set_stage("dense", [Chunk(id="d1", title="Dense Doc", url="http://d", content="x", score=0.5)])
+    state.set_stage("bm25", [Chunk(id="b1", title="BM25 Doc", url="http://b", content="y", score=0.8)])
+    state.set_stage("fused", [Chunk(id="f1", title="Fused Doc", url="http://f", content="z", score=0.7)])
+    state.set_reranked([Chunk(id="r1", title="Reranked Doc", url="http://r", content="w", score=3.2)])
     state.answer = "final"
     state.faithfulness = 0.81
     return state

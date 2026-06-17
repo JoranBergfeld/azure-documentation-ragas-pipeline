@@ -78,3 +78,14 @@ def test_candidate_pool_smaller_than_top_k_rejected(monkeypatch):
     monkeypatch.setenv("TOP_K", "5")
     with pytest.raises(ValueError, match="CANDIDATE_POOL"):
         Settings.from_env(load=False)
+
+
+def test_retrieval_mode_values():
+    from ragpipe.config import RetrievalMode
+
+    assert RetrievalMode.CONTEXTUAL.value == "contextual"
+    assert RetrievalMode.BASELINE.value == "baseline"
+    # the 8 spec modes exist as names even if not all wired yet
+    assert {"baseline", "baseline_agentic", "raptor_sac", "raptor_sac_agentic",
+            "graphrag", "graphrag_agentic", "combined", "combined_agentic"} <= {
+        m.value for m in RetrievalMode}

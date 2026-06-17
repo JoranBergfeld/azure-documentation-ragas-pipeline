@@ -1,5 +1,8 @@
+from __future__ import annotations
+
 from ragpipe.app_wiring import make_deps
 from ragpipe.config import Settings, TestsetMode
+from ragpipe.retrieval.substrate import RetrievalResult
 
 
 def _settings():
@@ -15,13 +18,8 @@ def _settings():
 
 
 def test_make_deps_wires_callables_from_injected_components():
-    class FakeDense:
-        def retrieve(self, q):
-            return []
-
-    class FakeBm25:
-        def retrieve(self, q):
-            return []
+    async def fake_retrieve(q, k):
+        return RetrievalResult(candidates=[], stages={})
 
     class FakeReranker:
         def rerank(self, q, fused, top_k=None):
@@ -37,8 +35,7 @@ def test_make_deps_wires_callables_from_injected_components():
 
     deps = make_deps(
         _settings(),
-        dense=FakeDense(),
-        bm25=FakeBm25(),
+        retrieve=fake_retrieve,
         reranker=FakeReranker(),
         generator=FakeGen(),
         scorer=FakeScorer(),
@@ -46,18 +43,15 @@ def test_make_deps_wires_callables_from_injected_components():
 
     assert deps.threshold == 0.7
     assert deps.max_retries == 2
-    assert callable(deps.dense)
-    assert deps.dense("q") == []
+    assert callable(deps.retrieve)
 
 
 def test_make_deps_threads_top_k_and_new_signatures():
-    from ragpipe.app_wiring import make_deps
-
     class _S:
         faithfulness_threshold = 0.7
         max_retries = 2
-        rrf_k = 60
         top_k = 4
+        candidate_pool = 15
 
     class _Rerank:
         def __init__(self):
@@ -75,15 +69,15 @@ def test_make_deps_threads_top_k_and_new_signatures():
             self.prev = previous_answer
             return "a"
 
-    class _Id:
-        def retrieve(self, q):
-            return []
-
+    class _Scorer:
         def score(self, q, a, c):
             return 1.0
 
+    async def fake_retrieve(q, k):
+        return RetrievalResult(candidates=[], stages={})
+
     rr, gen = _Rerank(), _Gen()
-    deps = make_deps(_S(), dense=_Id(), bm25=_Id(), reranker=rr, generator=gen, scorer=_Id())
+    deps = make_deps(_S(), retrieve=fake_retrieve, reranker=rr, generator=gen, scorer=_Scorer())
     assert deps.top_k == 4
     deps.rerank("q", [], 9)
     assert rr.k == 9
