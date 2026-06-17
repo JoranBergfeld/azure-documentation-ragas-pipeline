@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from ragpipe.graphrag import parse_extraction
+from ragpipe.graphrag import Entity, merge_entities, parse_extraction
 
 
 def test_parse_extraction_reads_entities_and_relationships():
@@ -25,3 +25,15 @@ def test_parse_extraction_tolerates_garbage_records():
     entities, rels = parse_extraction("not a record##()##", source_chunk_id="c", source_url="u")
     assert entities == []
     assert rels == []
+
+
+def test_merge_entities_unions_sources_and_descriptions():
+    a = Entity("AZURE FUNCTIONS", "service", "Serverless compute", ["c1"], ["u1"])
+    b = Entity("AZURE FUNCTIONS", "service", "Event-driven", ["c2"], ["u2"])
+    c = Entity("BLOB STORAGE", "service", "Object storage", ["c1"], ["u1"])
+    merged = merge_entities([a, b, c])
+    by_name = {e.name: e for e in merged}
+    assert set(by_name) == {"AZURE FUNCTIONS", "BLOB STORAGE"}
+    fn = by_name["AZURE FUNCTIONS"]
+    assert set(fn.source_chunk_ids) == {"c1", "c2"}
+    assert "Serverless compute" in fn.description and "Event-driven" in fn.description

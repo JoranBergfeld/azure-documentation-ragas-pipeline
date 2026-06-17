@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import networkx as nx
 from dataclasses import dataclass, field
 
 
@@ -77,17 +76,3 @@ def merge_entities(entities: list[Entity]) -> list[Entity]:
     return list(by_name.values())
 
 
-def detect_communities(entity_names: list[str], relationships: list[Relationship], *, seed: int = 0) -> dict[str, int]:
-    """Assign each entity a community id via networkx Louvain over the relationship
-    graph. Isolated entities each get their own community."""
-    g = nx.Graph()
-    g.add_nodes_from(entity_names)
-    for r in relationships:
-        if r.source in g and r.target in g:
-            g.add_edge(r.source, r.target, weight=r.weight)
-    communities = nx.community.louvain_communities(g, seed=seed, weight="weight")
-    mapping: dict[str, int] = {}
-    for cid, members in enumerate(communities):
-        for name in members:
-            mapping[name] = cid
-    return mapping
