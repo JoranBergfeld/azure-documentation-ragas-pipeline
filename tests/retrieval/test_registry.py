@@ -68,3 +68,44 @@ def test_combined_mode_registered():
     from ragpipe.config import RetrievalMode
     from ragpipe.retrieval.registry import registered_modes
     assert RetrievalMode.COMBINED in registered_modes()
+
+
+def test_all_modes_registered():
+    from ragpipe.config import RetrievalMode
+    from ragpipe.retrieval.registry import registered_modes
+    assert set(registered_modes()) == set(RetrievalMode)
+
+
+def test_every_mode_builds_with_fake_ctx():
+    from ragpipe.config import RetrievalMode
+    from ragpipe.retrieval.registry import build_substrate
+
+    class _Settings:
+        search_index = "ms-docs"
+        baseline_index = "baseline"
+        raptor_sac_index = "raptor-sac"
+        graph_entities_index = "ge"
+        graph_relationships_index = "gr"
+        graph_communities_index = "gc"
+        candidate_pool = 15
+        rrf_k = 60
+        top_k = 5
+        agentic_max_iterations = 3
+
+    class _Search:
+        def search(self, *a, **k):
+            return []
+
+    class _Ctx:
+        def search_client(self, index):
+            return _Search()
+
+        def embed(self, text):
+            return [0.0]
+
+        def plan(self, query):
+            return [query]
+
+    for mode in RetrievalMode:
+        sub = build_substrate(mode, _Settings(), _Ctx())
+        assert sub.name

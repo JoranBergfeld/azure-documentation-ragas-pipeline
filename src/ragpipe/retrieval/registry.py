@@ -11,6 +11,7 @@ from ragpipe.retrieval.substrate import HybridSubstrate, RetrievalSubstrate
 class SubstrateCtx(Protocol):
     def search_client(self, index: str): ...
     def embed(self, text: str) -> list[float]: ...
+    def plan(self, query: str) -> list[str]: ...
 
 
 def _hybrid(index_attr: str, name: str):
@@ -72,3 +73,20 @@ def _combined(settings: Settings, ctx: SubstrateCtx) -> RetrievalSubstrate:
 
 
 _REGISTRY[RetrievalMode.COMBINED] = _combined
+
+
+def _agentic(base_mode: RetrievalMode, name: str):
+    def factory(settings, ctx):
+        inner = build_substrate(base_mode, settings, ctx)
+        from ragpipe.retrieval.agentic import AgenticSubstrate
+        return AgenticSubstrate(
+            name=name, inner=inner, plan_fn=ctx.plan,
+            max_iterations=settings.agentic_max_iterations,
+        )
+    return factory
+
+
+_REGISTRY[RetrievalMode.BASELINE_AGENTIC] = _agentic(RetrievalMode.BASELINE, "baseline_agentic")
+_REGISTRY[RetrievalMode.RAPTOR_SAC_AGENTIC] = _agentic(RetrievalMode.RAPTOR_SAC, "raptor_sac_agentic")
+_REGISTRY[RetrievalMode.GRAPHRAG_AGENTIC] = _agentic(RetrievalMode.GRAPHRAG, "graphrag_agentic")
+_REGISTRY[RetrievalMode.COMBINED_AGENTIC] = _agentic(RetrievalMode.COMBINED, "combined_agentic")
