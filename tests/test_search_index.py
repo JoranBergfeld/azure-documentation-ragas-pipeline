@@ -40,3 +40,13 @@ def test_include_context_false_omits_context_from_bm25_and_semantic():
     sem_content_names = [f.field_name for f in config.prioritized_fields.content_fields]
     assert "context" not in sem_content_names
     assert "content" in sem_content_names
+
+
+def test_include_level_adds_filterable_level_field():
+    from ragpipe.search_index import build_index
+    idx = build_index("raptor-sac", 1536, include_context=True, include_level=True)
+    fields = {f.name: f for f in idx.fields}
+    assert "level" in fields
+    assert fields["level"].filterable is True
+    idx2 = build_index("baseline", 1536)
+    assert "level" not in {f.name for f in idx2.fields}
