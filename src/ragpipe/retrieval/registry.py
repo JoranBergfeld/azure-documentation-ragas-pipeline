@@ -29,6 +29,7 @@ def _hybrid(index_attr: str, name: str):
 _REGISTRY: dict[RetrievalMode, Callable[[Settings, SubstrateCtx], RetrievalSubstrate]] = {
     RetrievalMode.CONTEXTUAL: _hybrid("search_index", "contextual"),
     RetrievalMode.BASELINE: _hybrid("baseline_index", "baseline"),
+    RetrievalMode.RAPTOR_SAC: _hybrid("raptor_sac_index", "raptor_sac"),
 }
 
 
