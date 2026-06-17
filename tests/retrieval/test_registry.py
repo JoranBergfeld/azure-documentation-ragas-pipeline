@@ -62,3 +62,9 @@ def test_graphrag_mode_registered():
     from ragpipe.config import RetrievalMode
     from ragpipe.retrieval.registry import registered_modes
     assert RetrievalMode.GRAPHRAG in registered_modes()
+
+
+def test_combined_mode_registered():
+    from ragpipe.config import RetrievalMode
+    from ragpipe.retrieval.registry import registered_modes
+    assert RetrievalMode.COMBINED in registered_modes()

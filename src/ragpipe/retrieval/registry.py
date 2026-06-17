@@ -62,3 +62,13 @@ def build_substrate(mode: RetrievalMode, settings: Settings, ctx: SubstrateCtx) 
     if mode not in _REGISTRY:
         raise ValueError(f"mode {mode.value!r} is not registered yet (phase not built)")
     return _REGISTRY[mode](settings, ctx)
+
+
+def _combined(settings: Settings, ctx: SubstrateCtx) -> RetrievalSubstrate:
+    raptor = build_substrate(RetrievalMode.RAPTOR_SAC, settings, ctx)
+    graph = build_substrate(RetrievalMode.GRAPHRAG, settings, ctx)
+    from ragpipe.retrieval.combined import CombinedSubstrate
+    return CombinedSubstrate(name="combined", substrates=[raptor, graph], rrf_k=settings.rrf_k)
+
+
+_REGISTRY[RetrievalMode.COMBINED] = _combined
