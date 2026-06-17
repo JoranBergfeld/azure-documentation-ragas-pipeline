@@ -53,6 +53,8 @@ def build_pipeline_fn(
 
     _clients: dict[str, SearchClient] = {}
 
+    complete_fn = None  # built lazily inside plan()
+
     class _Ctx:
         def search_client(self, index: str):
             if index not in _clients:
@@ -62,13 +64,44 @@ def build_pipeline_fn(
         def embed(self, text: str):
             return embed(text)
 
+        def plan(self, query: str) -> list[str]:  # pragma: no cover
+            import sys
+
+            from ragpipe.context_gen import build_context_complete_fn
+
+            nonlocal complete_fn
+            if complete_fn is None:
+                complete_fn = build_context_complete_fn(settings)
+            PLAN_PROMPT = (
+                "Decompose the following question into 2-4 focused search sub-queries "
+                "that together cover what the user needs. Output one sub-query per line "
+                "with no numbering, bullets, or preamble.\n\nQuestion: {query}"
+            )
+            prompt = PLAN_PROMPT.format(query=query)
+            for attempt in range(settings.max_retries + 1):
+                try:
+                    raw = complete_fn(prompt)
+                    lines = [line.strip() for line in raw.splitlines() if line.strip()]
+                    if lines:
+                        return lines
+                except Exception as exc:  # noqa: BLE001
+                    print(
+                        f"plan attempt {attempt}: {type(exc).__name__}: {exc}",
+                        file=sys.stderr,
+                        flush=True,
+                    )
+            return []
+
     ctx = _Ctx()
     substrate = build_substrate(mode, settings, ctx)
 
-    # GraphRAG fuses candidates from multiple heterogeneous indexes; Azure's
-    # id-filtered semantic reranker can't span them. Use PassthroughReranker
-    # (score-sorted truncation) instead.
-    if substrate.name == "graphrag":
+    def _uses_passthrough(name: str) -> bool:
+        return name in {"graphrag", "combined"} or name.endswith("_agentic")
+
+    # GraphRAG and combined fuse candidates from multiple heterogeneous indexes;
+    # Azure's id-filtered semantic reranker can't span them. Agentic substrates
+    # wrap these same modes. All use PassthroughReranker (score-sorted truncation).
+    if _uses_passthrough(substrate.name):
         from ragpipe.retrieval.passthrough import PassthroughReranker
         reranker = PassthroughReranker(settings.top_k)
     else:
