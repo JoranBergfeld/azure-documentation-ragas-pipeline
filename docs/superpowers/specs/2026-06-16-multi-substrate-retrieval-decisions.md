@@ -154,15 +154,35 @@ Known limitations left for later phases (not bugs):
   live addition in Phase 4; the substrate logic itself is unit-tested with a fake plan_fn.
 - Plan: `docs/superpowers/plans/2026-06-17-multi-substrate-retrieval-phase4-combined-agentic.md`.
 
-## Morning checklist (live steps I did not run)
+## Status: ALL FOUR PHASES MERGED TO main (2026-06-17)
 
-- `uv run python -m ragpipe.ingest` equivalent for baseline: build the `baseline` index
-  (the `build_baseline` driver). Needs Azure creds + embedding/LLM budget.
-- `uv run python -m ragpipe.eval.run --modes contextual,baseline` to regenerate
-  `eval_results.json` in the new mode-keyed shape and confirm the two modes are comparable.
-- Eyeball `/compare` against the running API once the baseline index exists.
+The full 8-mode matrix is built and on `main`. `uv run pytest tests/ -q` → 179 passed,
+ruff clean. All 9 modes (8 headline + legacy `contextual`) register and build with a fake
+ctx. Nothing has been pushed to origin — `main` is ahead of `origin/main` locally; push
+when you're ready.
+
+Modes live: contextual (default), baseline(+agentic), raptor_sac(+agentic),
+graphrag(+agentic), combined(+agentic).
+
+## Morning checklist (live Azure steps I did NOT run — need creds + budget)
+
+These build the indexes each mode reads. Each is a `# pragma: no cover` driver in
+`ragpipe.ingest`; wire a small `__main__`/script or call from a REPL:
+- `build_baseline(settings)` → `baseline` index (plain chunks).
+- `build_raptor(settings)` → `raptor-sac` index (SAC leaves + RAPTOR summary nodes).
+- `build_graph(settings)` → `graph-entities` / `graph-relationships` / `graph-communities`.
+- The existing contextual index already exists (Foundry-bound), so `contextual` works now.
+Then compare:
+- `uv run python -m ragpipe.eval.run --modes contextual,baseline,raptor_sac,graphrag,combined`
+  (add the `*_agentic` variants too) to regenerate mode-keyed `eval_results.json`.
+- Eyeball `/compare` and the dashboard mode-comparison view once the indexes exist.
+
+Cost/latency heads-up for the live builds: graph extraction is one LLM call per chunk,
+community reports one per community (serial), RAPTOR summaries one per cluster per level.
+On ~584 pages that's real spend — run with a `limit` first to smoke it.
 
 ## Open questions for you (morning)
 
-- (Filled in if I hit anything I'd genuinely want your call on but had to pick a default
-  for.)
+- None blocking. Two judgment calls you might want to revisit are flagged above: Louvain vs
+  true Leiden (Phase 3), and the implicit-sufficiency agentic loop vs an LLM reflect-and-stop
+  loop (Phase 4). Both are easy swaps localized to one function.
