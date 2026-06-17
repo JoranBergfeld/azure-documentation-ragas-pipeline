@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 from ragpipe.graphrag import Entity, Relationship, detect_communities, merge_entities, parse_extraction
+from ragpipe.graphrag import (
+    Community, community_documents, entity_documents, relationship_documents,
+)
 
 
 def test_parse_extraction_reads_entities_and_relationships():
@@ -45,3 +48,23 @@ def test_detect_communities_groups_connected_entities():
     assert comm["A"] == comm["B"] == comm["C"]
     assert comm["X"] == comm["Y"]
     assert comm["A"] != comm["X"]
+
+
+def test_doc_shapers():
+    from ragpipe.graphrag import Entity, Relationship
+    e = Entity("AZURE FUNCTIONS", "service", "Serverless", ["c1"], ["u1"])
+    edocs = entity_documents([e], community={"AZURE FUNCTIONS": 3}, embed_batch_fn=lambda t: [[0.1]] * len(t))
+    assert edocs[0]["name"] == "AZURE FUNCTIONS"
+    assert edocs[0]["community_id"] == 3
+    assert edocs[0]["description_vector"] == [0.1]
+    assert edocs[0]["id"] == "entity-0"
+
+    r = Relationship("A", "B", "rel desc", 5.0, ["c1"], ["u1"])
+    rdocs = relationship_documents([r])
+    assert rdocs[0]["source"] == "A" and rdocs[0]["weight"] == 5.0
+    assert rdocs[0]["id"] == "rel-0"
+
+    c = Community(id=2, level=0, title="Compute", summary="A summary")
+    cdocs = community_documents([c], embed_batch_fn=lambda t: [[0.2]] * len(t))
+    assert cdocs[0]["id"] == "community-2"
+    assert cdocs[0]["summary_vector"] == [0.2]

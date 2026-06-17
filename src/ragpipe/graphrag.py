@@ -23,6 +23,14 @@ class Relationship:
     source_urls: list[str] = field(default_factory=list)
 
 
+@dataclass
+class Community:
+    id: int
+    level: int
+    title: str
+    summary: str
+
+
 def _fields(record: str) -> list[str]:
     inner = record.strip()
     if inner.startswith("(") and inner.endswith(")"):
@@ -91,5 +99,69 @@ def detect_communities(entity_names: list[str], relationships: list[Relationship
         for name in members:
             mapping[name] = cid
     return mapping
+
+
+def entity_documents(
+    entities: list[Entity],
+    *,
+    community: dict[str, int],
+    embed_batch_fn: object,
+) -> list[dict]:
+    """Shape Entity records into Azure AI Search doc dicts."""
+    vecs = embed_batch_fn([e.description for e in entities])  # type: ignore[operator]
+    return [
+        {
+            "id": f"entity-{i}",
+            "name": e.name,
+            "type": e.type,
+            "description": e.description,
+            "description_vector": vecs[i],
+            "community_id": community.get(e.name, -1),
+            "source_urls": e.source_urls,
+        }
+        for i, e in enumerate(entities)
+    ]
+
+
+def relationship_documents(
+    relationships: list[Relationship],
+    *,
+    embed_batch_fn: object = None,
+) -> list[dict]:
+    """Shape Relationship records into Azure AI Search doc dicts."""
+    vecs = embed_batch_fn([r.description for r in relationships]) if embed_batch_fn is not None else None  # type: ignore[operator]
+    docs = []
+    for i, r in enumerate(relationships):
+        doc: dict = {
+            "id": f"rel-{i}",
+            "source": r.source,
+            "target": r.target,
+            "description": r.description,
+            "weight": r.weight,
+            "source_urls": r.source_urls,
+        }
+        if vecs is not None:
+            doc["description_vector"] = vecs[i]
+        docs.append(doc)
+    return docs
+
+
+def community_documents(
+    communities: list[Community],
+    *,
+    embed_batch_fn: object,
+) -> list[dict]:
+    """Shape Community records into Azure AI Search doc dicts."""
+    vecs = embed_batch_fn([c.summary for c in communities])  # type: ignore[operator]
+    return [
+        {
+            "id": f"community-{c.id}",
+            "level": c.level,
+            "title": c.title,
+            "summary": c.summary,
+            "summary_vector": vecs[i],
+        }
+        for i, c in enumerate(communities)
+    ]
 
 
