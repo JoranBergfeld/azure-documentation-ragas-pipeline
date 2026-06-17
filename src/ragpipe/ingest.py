@@ -467,6 +467,7 @@ def build_graph(settings: Any, limit: int | None = None) -> None:  # pragma: no 
         detect_communities,
         entity_documents,
         merge_entities,
+        merge_relationships,
         parse_extraction,
         relationship_documents,
     )
@@ -534,8 +535,13 @@ def build_graph(settings: Any, limit: int | None = None) -> None:  # pragma: no 
 
     # 3. Merge and detect communities.
     entities = merge_entities(all_entities)
-    community_map = detect_communities([e.name for e in entities], all_relationships)
-    print(f"  merged: {len(entities)} entities, {len(community_map)} entity->community mappings", flush=True)
+    relationships = merge_relationships(all_relationships)
+    community_map = detect_communities([e.name for e in entities], relationships)
+    print(
+        f"  merged: {len(entities)} entities, {len(relationships)} relationships, "
+        f"{len(community_map)} entity->community mappings",
+        flush=True,
+    )
 
     # Group entities by community id for report generation.
     from collections import defaultdict
@@ -546,7 +552,7 @@ def build_graph(settings: Any, limit: int | None = None) -> None:  # pragma: no 
 
     # Group relationships by community (both endpoints must be in community).
     rel_groups: dict[int, list] = defaultdict(list)
-    for r in all_relationships:
+    for r in relationships:
         src_cid = community_map.get(r.source, -1)
         tgt_cid = community_map.get(r.target, -1)
         if src_cid == tgt_cid and src_cid != -1:
@@ -589,7 +595,7 @@ def build_graph(settings: Any, limit: int | None = None) -> None:  # pragma: no 
 
     # 4. Build docs for all three indexes.
     ent_docs = entity_documents(entities, community=community_map, embed_batch_fn=embed_batch)
-    rel_docs = relationship_documents(all_relationships, embed_batch_fn=embed_batch)
+    rel_docs = relationship_documents(relationships, embed_batch_fn=embed_batch)
     com_docs = community_documents(communities, embed_batch_fn=embed_batch)
 
     # 5. Create the three indexes.
@@ -612,7 +618,7 @@ def build_graph(settings: Any, limit: int | None = None) -> None:  # pragma: no 
     _upload_in_batches(com_client, com_docs)
 
     print(
-        f"build_graph done: {len(entities)} entities, {len(all_relationships)} relationships, "
+        f"build_graph done: {len(entities)} entities, {len(relationships)} relationships, "
         f"{len(communities)} communities → indexes "
         f"'{settings.graph_entities_index}', '{settings.graph_relationships_index}', "
         f"'{settings.graph_communities_index}'.",

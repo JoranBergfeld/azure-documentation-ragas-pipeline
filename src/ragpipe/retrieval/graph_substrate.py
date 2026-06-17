@@ -91,9 +91,11 @@ def build_adjacency(client) -> dict[str, list[Chunk]]:  # pragma: no cover
     all edges incident to it.
     """
     adjacency: dict[str, list[Chunk]] = {}
+    # No `top=`: Azure Search caps a single page and would silently drop edges past
+    # it. The SearchItemPaged iterator pages through the full result set, so the
+    # whole relationships index is loaded into the adjacency map.
     results = client.search(
         search_text="*",
-        top=1000,
         select=["id", "source", "target", "description", "weight", "source_urls"],
     )
     for hit in results:

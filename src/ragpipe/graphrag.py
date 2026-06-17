@@ -85,6 +85,34 @@ def merge_entities(entities: list[Entity]) -> list[Entity]:
     return list(by_name.values())
 
 
+def merge_relationships(relationships: list[Relationship]) -> list[Relationship]:
+    """Merge relationships sharing a (source, target) pair: concat unique
+    descriptions, union source ids/urls, keep the max weight. The LLM extracts
+    the same edge from many chunks, so without this the relationships index fills
+    with near-duplicate edges that bloat embeddings and skew RRF/expansion."""
+    by_pair: dict[tuple[str, str], Relationship] = {}
+    for r in relationships:
+        key = (r.source, r.target)
+        cur = by_pair.get(key)
+        if cur is None:
+            by_pair[key] = Relationship(
+                source=r.source, target=r.target, description=r.description, weight=r.weight,
+                source_chunk_ids=list(r.source_chunk_ids), source_urls=list(r.source_urls),
+            )
+            continue
+        descs = cur.description.split("\n")
+        if r.description and r.description not in descs:
+            cur.description = (cur.description + "\n" + r.description).strip()
+        cur.weight = max(cur.weight, r.weight)
+        for cid in r.source_chunk_ids:
+            if cid not in cur.source_chunk_ids:
+                cur.source_chunk_ids.append(cid)
+        for u in r.source_urls:
+            if u not in cur.source_urls:
+                cur.source_urls.append(u)
+    return list(by_pair.values())
+
+
 def detect_communities(entity_names: list[str], relationships: list[Relationship], *, seed: int = 0) -> dict[str, int]:
     """Assign each entity a community id via networkx Louvain over the relationship
     graph. Isolated entities each get their own community."""
