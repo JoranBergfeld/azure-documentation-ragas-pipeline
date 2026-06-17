@@ -70,6 +70,7 @@ def build_pipeline_fn(
     rerank_index_attr = {
         "contextual": "search_index",
         "baseline": "baseline_index",
+        "raptor_sac": "raptor_sac_index",
     }.get(substrate.name, "search_index")
     reranker = SemanticReranker(
         ctx.search_client(getattr(settings, rerank_index_attr)),

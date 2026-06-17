@@ -20,7 +20,7 @@ SEMANTIC_CONFIG_NAME = "default-semantic"
 VECTOR_PROFILE_NAME = "default-vector"
 
 
-def build_index(name: str, vector_dimensions: int, include_context: bool = True) -> SearchIndex:
+def build_index(name: str, vector_dimensions: int, include_context: bool = True, include_level: bool = False) -> SearchIndex:
     """Build an Azure AI Search index schema.
 
     When ``include_context`` is True (default), the ``context`` field is
@@ -53,6 +53,10 @@ def build_index(name: str, vector_dimensions: int, include_context: bool = True)
             vector_search_profile_name=VECTOR_PROFILE_NAME,
         ),
     ]
+    if include_level:
+        fields.append(
+            SimpleField(name="level", type=SearchFieldDataType.Int32, filterable=True, facetable=True)
+        )
     vector_search = VectorSearch(
         algorithms=[HnswAlgorithmConfiguration(name="hnsw")],
         profiles=[

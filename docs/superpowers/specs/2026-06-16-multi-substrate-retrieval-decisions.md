@@ -93,6 +93,23 @@ Known limitations left for later phases (not bugs):
 - `RETRIEVAL_STAGES` (the per-stage sweep default) is still the hybrid tuple; later
   substrates name different stages and the sweep default will need widening.
 
+## Phase 2 (SAC + RAPTOR) decisions
+
+- **RAPTOR retrieval needs no new substrate.** Collapsed-tree retrieval = flat hybrid
+  search over an index holding both leaves and summary nodes, so the mode is just
+  `HybridSubstrate` over `raptor_sac_index` (one registry line). All the work is the build.
+- **Clustering: scikit-learn `GaussianMixture` + BIC** (hard-label via argmax), not UMAP+GMM
+  like the RAPTOR paper. UMAP (`umap-learn`) is a heavy dep and reduction is optional at
+  584 pages; GMM+BIC captures the soft-clustering spirit with one standard dep. New dep:
+  `scikit-learn`. Overrule by swapping `cluster_embeddings` if you want UMAP.
+- **Summary nodes carry no SAC context and no single URL** (`context=""`, `url=""`); a
+  summary spans pages. Leaves keep their SAC context + URL. Both share the `raptor-sac`
+  index with a `level` field (0 = leaf, >=1 = summary).
+- **Merge note:** Phase 1 is now on `main` (merged 2026-06-17). Main had advanced with a
+  provider-aware-judge line incl. its own ADR-0011, so the substrate ADRs were renumbered
+  to 0012-0016. The merge auto-resolved and the full suite (156) stayed green.
+- Plan: `docs/superpowers/plans/2026-06-17-multi-substrate-retrieval-phase2-raptor.md`.
+
 ## Morning checklist (live steps I did not run)
 
 - `uv run python -m ragpipe.ingest` equivalent for baseline: build the `baseline` index
