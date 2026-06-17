@@ -56,3 +56,9 @@ def test_build_raptor_sac_substrate_uses_raptor_index():
 
     sub = build_substrate(RetrievalMode.RAPTOR_SAC, settings=_Settings(), ctx=_Ctx())
     assert sub.name == "raptor_sac"
+
+
+def test_graphrag_mode_registered():
+    from ragpipe.config import RetrievalMode
+    from ragpipe.retrieval.registry import registered_modes
+    assert RetrievalMode.GRAPHRAG in registered_modes()
