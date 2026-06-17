@@ -109,6 +109,28 @@ Known limitations left for later phases (not bugs):
   provider-aware-judge line incl. its own ADR-0011, so the substrate ADRs were renumbered
   to 0012-0016. The merge auto-resolved and the full suite (156) stayed green.
 - Plan: `docs/superpowers/plans/2026-06-17-multi-substrate-retrieval-phase2-raptor.md`.
+- **RAPTOR summaries are not content-address cached** (the cluster membership shifts every
+  ingest, so a stable key is awkward). The summarizer is bounded (timeout/retries, ADR-0011)
+  but recomputes each build. Fine for a 584-page demo; revisit if ingest cost bites.
+
+## Phase 3 (GraphRAG) decisions
+
+- **Community detection: networkx `louvain_communities`** (already an installed transitive
+  dep), not Leiden via graspologic/leidenalg. Louvain is Leiden's well-tested predecessor and
+  needs no new/heavy dependency. ADR-0014 cited Leiden; this is a pragmatic substitution for a
+  demo corpus. Overrule by swapping `detect_communities` if you want true Leiden.
+- **Graph mode uses a `PassthroughReranker`, not Azure semantic rerank.** The semantic
+  reranker filters candidate ids within ONE index; GraphRAG candidates span three indexes
+  (entities/relationships/communities), so it can't apply. Passthrough sorts by the hybrid+RRF
+  score and truncates. This is a design addition not in the original spec; `app_wiring` selects
+  the reranker by substrate name.
+- **Graph artifacts are returned as `Chunk`s** (entity/relationship descriptions, community
+  summaries) so they flow through the existing generate/gate tail unchanged. Entities and
+  relationships carry a source `url` so the deterministic URL-match metric stays partially
+  meaningful for graph mode; community reports have no single url.
+- **Local search expands 1 hop** via an in-memory adjacency built once from the relationships
+  index at wiring time (no deep online traversal, per ADR-0014/Non-goals).
+- Plan: `docs/superpowers/plans/2026-06-17-multi-substrate-retrieval-phase3-graphrag.md`.
 
 ## Morning checklist (live steps I did not run)
 

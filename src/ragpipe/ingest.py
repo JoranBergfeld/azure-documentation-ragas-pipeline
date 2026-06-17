@@ -437,6 +437,195 @@ def build_baseline(settings: Any, limit: int | None = None) -> None:  # pragma: 
     )
 
 
+def build_graph(settings: Any, limit: int | None = None) -> None:  # pragma: no cover
+    """Ingest the GraphRAG indexes: entities, relationships, and communities.
+
+    Steps:
+    1. Fetch pages; chunk into SAC leaf docs (same decoration as main).
+    2. For each leaf doc, call an LLM to extract entities + relationships in the
+       delimited format parse_extraction expects.
+    3. Merge entities, detect communities (Louvain), produce Community objects
+       with an LLM-written title + summary per community.
+    4. Embed and upload to three separate Azure AI Search indexes.
+
+    Community reports: LLM-generated (title + summary) per community -- NOT a
+    shortcut. A separate chat completion writes a short report over the member
+    entities' descriptions for each community group.
+    """
+    import sys
+
+    import yaml
+    from azure.identity import DefaultAzureCredential
+    from azure.search.documents import SearchClient
+    from azure.search.documents.indexes import SearchIndexClient
+
+    from ragpipe.context_gen import ContextGenerator, build_context_complete_fn
+    from ragpipe.embeddings import build_batch_embed_fn
+    from ragpipe.graphrag import (
+        Community,
+        community_documents,
+        detect_communities,
+        entity_documents,
+        merge_entities,
+        merge_relationships,
+        parse_extraction,
+        relationship_documents,
+    )
+    from ragpipe.search_index import (
+        build_communities_index,
+        build_entities_index,
+        build_relationships_index,
+    )
+
+    with open("data/corpus_sources.yaml") as f:
+        urls = yaml.safe_load(f)["sources"]
+    if limit is not None:
+        urls = urls[:limit]
+
+    cred = DefaultAzureCredential()
+    embed_batch = build_batch_embed_fn(settings)
+    complete_fn = build_context_complete_fn(settings)
+    context_gen = ContextGenerator(complete_fn, model=settings.foundry_chat_model)
+
+    pages = fetch_pages(urls)
+    if not pages:
+        raise SystemExit("No pages fetched; nothing to ingest.")
+
+    # 1. Build SAC leaf docs for chunk text + ids + urls.
+    leaf_docs = build_documents(pages, embed_batch_fn=embed_batch, context_fn=context_gen.generate)
+    if context_gen.fallback_count:
+        print(f"  context fallbacks (breadcrumb-only): {context_gen.fallback_count}", flush=True)
+
+    EXTRACT_PROMPT = (
+        "Extract entities and relationships from the following text. "
+        "Output records separated by '##'. "
+        "Entity format: (\"entity\"<|>NAME<|>type<|>description). "
+        "Relationship format: (\"relationship\"<|>SOURCE<|>TARGET<|>description<|>weight). "
+        "Use a numeric weight 1-10 for relationships. "
+        "Output only the records, no preamble.\n\n{text}"
+    )
+
+    def extract_fn(chunk_text: str) -> str:
+        prompt = EXTRACT_PROMPT.format(text=chunk_text)
+        for attempt in range(settings.max_retries + 1):
+            try:
+                return complete_fn(prompt).strip()
+            except Exception as exc:  # noqa: BLE001
+                print(
+                    f"extract_fn attempt {attempt}: {type(exc).__name__}: {exc}",
+                    file=sys.stderr,
+                    flush=True,
+                )
+        return ""
+
+    # 2. Extract entities + relationships from each leaf doc.
+    print(f"Extracting entities/relationships from {len(leaf_docs)} leaf docs…", flush=True)
+    all_entities = []
+    all_relationships = []
+    for i, doc in enumerate(leaf_docs):
+        raw = extract_fn(doc["content"])
+        if raw:
+            ents, rels = parse_extraction(raw, source_chunk_id=doc["id"], source_url=doc["url"])
+            all_entities.extend(ents)
+            all_relationships.extend(rels)
+        if (i + 1) % 50 == 0:
+            print(f"  extracted {i + 1}/{len(leaf_docs)} docs ({len(all_entities)} entities so far)", flush=True)
+
+    print(f"  raw: {len(all_entities)} entities, {len(all_relationships)} relationships", flush=True)
+
+    # 3. Merge and detect communities.
+    entities = merge_entities(all_entities)
+    relationships = merge_relationships(all_relationships)
+    community_map = detect_communities([e.name for e in entities], relationships)
+    print(
+        f"  merged: {len(entities)} entities, {len(relationships)} relationships, "
+        f"{len(community_map)} entity->community mappings",
+        flush=True,
+    )
+
+    # Group entities by community id for report generation.
+    from collections import defaultdict
+    groups: dict[int, list] = defaultdict(list)
+    for e in entities:
+        cid = community_map.get(e.name, -1)
+        groups[cid].append(e)
+
+    # Group relationships by community (both endpoints must be in community).
+    rel_groups: dict[int, list] = defaultdict(list)
+    for r in relationships:
+        src_cid = community_map.get(r.source, -1)
+        tgt_cid = community_map.get(r.target, -1)
+        if src_cid == tgt_cid and src_cid != -1:
+            rel_groups[src_cid].append(r)
+
+    COMMUNITY_REPORT_PROMPT = (
+        "You are a technical writer. Write a short report for a cluster of related entities. "
+        "First line: a concise title (no label prefix). "
+        "Second line: a 2-4 sentence summary of what this cluster covers and why it matters. "
+        "Reply with only title and summary, separated by a newline.\n\n"
+        "Entities:\n{entities}\n\nRelationships:\n{relationships}"
+    )
+
+    print(f"Generating community reports for {len(groups)} communities…", flush=True)
+    communities = []
+    for cid, members in sorted(groups.items()):
+        ent_text = "\n".join(f"- {e.name} ({e.type}): {e.description[:120]}" for e in members[:20])
+        rel_text = "\n".join(
+            f"- {r.source} -> {r.target}: {r.description[:80]}"
+            for r in rel_groups.get(cid, [])[:10]
+        )
+        prompt = COMMUNITY_REPORT_PROMPT.format(entities=ent_text, relationships=rel_text or "(none)")
+        report = ""
+        for attempt in range(settings.max_retries + 1):
+            try:
+                report = complete_fn(prompt).strip()
+                break
+            except Exception as exc:  # noqa: BLE001
+                print(
+                    f"community report cid={cid} attempt {attempt}: {type(exc).__name__}: {exc}",
+                    file=sys.stderr,
+                    flush=True,
+                )
+        lines = report.splitlines()
+        title = lines[0].strip() if lines else f"Community {cid}"
+        summary = "\n".join(lines[1:]).strip() if len(lines) > 1 else "; ".join(e.description[:80] for e in members[:5])
+        communities.append(Community(id=cid, level=0, title=title, summary=summary))
+
+    print(f"  generated {len(communities)} community reports.", flush=True)
+
+    # 4. Build docs for all three indexes.
+    ent_docs = entity_documents(entities, community=community_map, embed_batch_fn=embed_batch)
+    rel_docs = relationship_documents(relationships, embed_batch_fn=embed_batch)
+    com_docs = community_documents(communities, embed_batch_fn=embed_batch)
+
+    # 5. Create the three indexes.
+    dims = len(ent_docs[0]["description_vector"])
+    index_client = SearchIndexClient(settings.search_endpoint, cred)
+    index_client.create_or_update_index(build_entities_index(settings.graph_entities_index, dims))
+    index_client.create_or_update_index(build_relationships_index(settings.graph_relationships_index, dims))
+    index_client.create_or_update_index(build_communities_index(settings.graph_communities_index, dims))
+
+    # 6. Upload each doc set.
+    ent_client = SearchClient(settings.search_endpoint, settings.graph_entities_index, cred)
+    rel_client = SearchClient(settings.search_endpoint, settings.graph_relationships_index, cred)
+    com_client = SearchClient(settings.search_endpoint, settings.graph_communities_index, cred)
+
+    print(f"Uploading {len(ent_docs)} entity docs to '{settings.graph_entities_index}'…", flush=True)
+    _upload_in_batches(ent_client, ent_docs)
+    print(f"Uploading {len(rel_docs)} relationship docs to '{settings.graph_relationships_index}'…", flush=True)
+    _upload_in_batches(rel_client, rel_docs)
+    print(f"Uploading {len(com_docs)} community docs to '{settings.graph_communities_index}'…", flush=True)
+    _upload_in_batches(com_client, com_docs)
+
+    print(
+        f"build_graph done: {len(entities)} entities, {len(relationships)} relationships, "
+        f"{len(communities)} communities → indexes "
+        f"'{settings.graph_entities_index}', '{settings.graph_relationships_index}', "
+        f"'{settings.graph_communities_index}'.",
+        flush=True,
+    )
+
+
 if __name__ == "__main__":  # pragma: no cover
     import sys
 

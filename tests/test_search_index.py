@@ -50,3 +50,15 @@ def test_include_level_adds_filterable_level_field():
     assert fields["level"].filterable is True
     idx2 = build_index("baseline", 1536)
     assert "level" not in {f.name for f in idx2.fields}
+
+
+def test_graph_index_builders_have_expected_fields():
+    from ragpipe.search_index import (
+        build_entities_index, build_relationships_index, build_communities_index,
+    )
+    ent = {f.name for f in build_entities_index("graph-entities", 1536).fields}
+    assert {"id", "name", "type", "description", "description_vector", "community_id"} <= ent
+    rel = {f.name for f in build_relationships_index("graph-relationships", 1536).fields}
+    assert {"id", "source", "target", "description", "weight"} <= rel
+    com = {f.name for f in build_communities_index("graph-communities", 1536).fields}
+    assert {"id", "level", "title", "summary", "summary_vector"} <= com

@@ -65,19 +65,26 @@ def build_pipeline_fn(
     ctx = _Ctx()
     substrate = build_substrate(mode, settings, ctx)
 
-    # The reranker re-scores within whatever the substrate returns, using the
-    # substrate's own index for the hybrid stage-1 retrieval.
-    rerank_index_attr = {
-        "contextual": "search_index",
-        "baseline": "baseline_index",
-        "raptor_sac": "raptor_sac_index",
-    }.get(substrate.name, "search_index")
-    reranker = SemanticReranker(
-        ctx.search_client(getattr(settings, rerank_index_attr)),
-        SEMANTIC_CONFIG_NAME,
-        settings.top_k,
-        embed_fn=embed,
-    )
+    # GraphRAG fuses candidates from multiple heterogeneous indexes; Azure's
+    # id-filtered semantic reranker can't span them. Use PassthroughReranker
+    # (score-sorted truncation) instead.
+    if substrate.name == "graphrag":
+        from ragpipe.retrieval.passthrough import PassthroughReranker
+        reranker = PassthroughReranker(settings.top_k)
+    else:
+        # The reranker re-scores within whatever the substrate returns, using the
+        # substrate's own index for the hybrid stage-1 retrieval.
+        rerank_index_attr = {
+            "contextual": "search_index",
+            "baseline": "baseline_index",
+            "raptor_sac": "raptor_sac_index",
+        }.get(substrate.name, "search_index")
+        reranker = SemanticReranker(
+            ctx.search_client(getattr(settings, rerank_index_attr)),
+            SEMANTIC_CONFIG_NAME,
+            settings.top_k,
+            embed_fn=embed,
+        )
 
     agent = FoundryAgent(
         project_endpoint=settings.foundry_project_endpoint,

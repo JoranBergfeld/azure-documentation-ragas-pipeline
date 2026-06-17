@@ -87,6 +87,126 @@ def build_index(name: str, vector_dimensions: int, include_context: bool = True,
     )
 
 
+def _vector_search_config() -> VectorSearch:
+    """Return a VectorSearch config with the shared HNSW profile.
+
+    Each SearchIndex object needs its own instance (the SDK owns the object
+    after you hand it over), but the profile name constant is reused across
+    all indexes -- that's fine because profile names are scoped per-index.
+    """
+    return VectorSearch(
+        algorithms=[HnswAlgorithmConfiguration(name="hnsw")],
+        profiles=[
+            VectorSearchProfile(
+                name=VECTOR_PROFILE_NAME, algorithm_configuration_name="hnsw"
+            )
+        ],
+    )
+
+
+def _vector_field(name: str, vector_dimensions: int) -> SearchField:
+    return SearchField(
+        name=name,
+        type=SearchFieldDataType.Collection(SearchFieldDataType.Single),
+        searchable=True,
+        vector_search_dimensions=vector_dimensions,
+        vector_search_profile_name=VECTOR_PROFILE_NAME,
+    )
+
+
+def build_entities_index(name: str, vector_dimensions: int) -> SearchIndex:
+    """Build the GraphRAG entities index schema."""
+    fields = [
+        SimpleField(name="id", type=SearchFieldDataType.String, key=True, filterable=True),
+        SearchableField(name="name", type=SearchFieldDataType.String),
+        SimpleField(name="type", type=SearchFieldDataType.String, filterable=True),
+        SearchableField(name="description", type=SearchFieldDataType.String),
+        _vector_field("description_vector", vector_dimensions),
+        SimpleField(name="community_id", type=SearchFieldDataType.Int32, filterable=True),
+        SimpleField(
+            name="source_urls",
+            type=SearchFieldDataType.Collection(SearchFieldDataType.String),
+        ),
+    ]
+    semantic = SemanticSearch(
+        configurations=[
+            SemanticConfiguration(
+                name=SEMANTIC_CONFIG_NAME,
+                prioritized_fields=SemanticPrioritizedFields(
+                    title_field=SemanticField(field_name="name"),
+                    content_fields=[SemanticField(field_name="description")],
+                ),
+            )
+        ]
+    )
+    return SearchIndex(
+        name=name,
+        fields=fields,
+        vector_search=_vector_search_config(),
+        semantic_search=semantic,
+    )
+
+
+def build_relationships_index(name: str, vector_dimensions: int) -> SearchIndex:
+    """Build the GraphRAG relationships index schema."""
+    fields = [
+        SimpleField(name="id", type=SearchFieldDataType.String, key=True, filterable=True),
+        SearchableField(name="source", type=SearchFieldDataType.String, filterable=True),
+        SearchableField(name="target", type=SearchFieldDataType.String, filterable=True),
+        SearchableField(name="description", type=SearchFieldDataType.String),
+        _vector_field("description_vector", vector_dimensions),
+        SimpleField(name="weight", type=SearchFieldDataType.Double),
+        SimpleField(
+            name="source_urls",
+            type=SearchFieldDataType.Collection(SearchFieldDataType.String),
+        ),
+    ]
+    semantic = SemanticSearch(
+        configurations=[
+            SemanticConfiguration(
+                name=SEMANTIC_CONFIG_NAME,
+                prioritized_fields=SemanticPrioritizedFields(
+                    content_fields=[SemanticField(field_name="description")],
+                ),
+            )
+        ]
+    )
+    return SearchIndex(
+        name=name,
+        fields=fields,
+        vector_search=_vector_search_config(),
+        semantic_search=semantic,
+    )
+
+
+def build_communities_index(name: str, vector_dimensions: int) -> SearchIndex:
+    """Build the GraphRAG communities index schema."""
+    fields = [
+        SimpleField(name="id", type=SearchFieldDataType.String, key=True, filterable=True),
+        SimpleField(name="level", type=SearchFieldDataType.Int32, filterable=True),
+        SearchableField(name="title", type=SearchFieldDataType.String),
+        SearchableField(name="summary", type=SearchFieldDataType.String),
+        _vector_field("summary_vector", vector_dimensions),
+    ]
+    semantic = SemanticSearch(
+        configurations=[
+            SemanticConfiguration(
+                name=SEMANTIC_CONFIG_NAME,
+                prioritized_fields=SemanticPrioritizedFields(
+                    title_field=SemanticField(field_name="title"),
+                    content_fields=[SemanticField(field_name="summary")],
+                ),
+            )
+        ]
+    )
+    return SearchIndex(
+        name=name,
+        fields=fields,
+        vector_search=_vector_search_config(),
+        semantic_search=semantic,
+    )
+
+
 def create_index(client: SearchIndexClient, name: str, vector_dimensions: int) -> None:
     """Create the index, or update its schema in place if it already exists.
 
