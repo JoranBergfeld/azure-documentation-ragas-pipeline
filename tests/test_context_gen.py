@@ -72,3 +72,15 @@ def test_generation_failure_is_logged(tmp_path, capsys):
     assert g.generate("doc", "chunk") == ""
     err = capsys.readouterr().err
     assert "RuntimeError" in err and "temperature" in err
+
+
+def test_save_cache_atomic_writes_and_leaves_no_temp(tmp_path):
+    import json as _json
+
+    path = tmp_path / "cache.json"
+    g = ContextGenerator(lambda p: "ctx", cache_path=path)
+    g.generate("D", "C")
+    # cache content round-trips and no temp file is left behind (a fixed-name
+    # ".tmp" would race across concurrent ingest processes).
+    assert "ctx" in _json.loads(path.read_text()).values()
+    assert list(tmp_path.glob("*.tmp")) == []

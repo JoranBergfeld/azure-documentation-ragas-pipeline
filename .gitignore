@@ -11,3 +11,5 @@ data/testset.synthetic.jsonl
 .claude/scheduled_tasks.lock
 .context_cache.json
 .context_cache.tmp
+.graph_cache.json
+.graph_cache.json.*.tmp

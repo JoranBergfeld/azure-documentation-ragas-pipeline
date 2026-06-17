@@ -82,7 +82,7 @@ def build_embed_fn(
     settings: Settings,
     api_version: str = "2024-10-21",
     timeout: float = 30.0,
-    max_retries: int = 5,
+    max_retries: int = 8,
 ) -> Callable[[str], list[float]]:  # pragma: no cover - live Azure call
     """Return a synchronous `embed(text) -> list[float]` over Azure OpenAI + Entra auth.
 
@@ -105,11 +105,31 @@ def build_embed_fn(
     return embed
 
 
+def _embed_in_chunks(
+    embed_one: Callable[[list[str]], list[list[float]]],
+    texts: list[str],
+    max_inputs: int,
+) -> list[list[float]]:
+    """Embed ``texts`` by splitting into ``<= max_inputs`` sub-batches, in order.
+
+    A single embeddings request is bounded by both an input-array cap (2048) and
+    the deployment's tokens-per-minute limit -- passing every entity/relationship
+    description at once (tens of thousands of inputs, >1M tokens) guarantees a 429
+    that no retry budget can clear. Chunking keeps each request small; results are
+    concatenated in input order.
+    """
+    vectors: list[list[float]] = []
+    for start in range(0, len(texts), max_inputs):
+        vectors.extend(embed_one(texts[start : start + max_inputs]))
+    return vectors
+
+
 def build_batch_embed_fn(
     settings: Settings,
     api_version: str = "2024-10-21",
     timeout: float = 60.0,
-    max_retries: int = 6,
+    max_retries: int = 10,
+    max_inputs_per_request: int = 512,
 ) -> Callable[[list[str]], list[list[float]]]:  # pragma: no cover - live Azure call
     """Return `embed_batch(texts) -> list[vector]` sending many inputs per request.
 
@@ -118,14 +138,22 @@ def build_batch_embed_fn(
     it keeps total requests far under the deployment's per-10s request limit (the
     one-request-per-chunk approach thrashed on 429s). Results are returned in input
     order (the API guarantees response `index` ordering, which we sort on).
+
+    Inputs are chunked to `max_inputs_per_request` so an arbitrarily large list
+    (e.g. tens of thousands of graph entity/relationship descriptions) is split
+    into several modestly-sized requests instead of one oversized request that
+    would blow past the array cap and the per-minute token limit.
     """
     client = _build_client(settings, api_version, timeout, max_retries)
 
-    def embed_batch(texts: list[str]) -> list[list[float]]:
+    def _embed_one(sub: list[str]) -> list[list[float]]:
         result = client.embeddings.create(
-            model=settings.foundry_embedding_model, input=texts
+            model=settings.foundry_embedding_model, input=sub
         )
         ordered = sorted(result.data, key=lambda d: d.index)
         return [list(d.embedding) for d in ordered]
+
+    def embed_batch(texts: list[str]) -> list[list[float]]:
+        return _embed_in_chunks(_embed_one, texts, max_inputs_per_request)
 
     return embed_batch

@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import base64
 import hashlib
+import os
+import sys
 import time
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any, Callable
 
 from bs4 import BeautifulSoup
@@ -169,12 +171,43 @@ def fetch_pages(
     return pages
 
 
+def _upload_batch_with_retry(
+    search_client: Any,
+    batch: list[dict[str, Any]],
+    *,
+    max_retries: int = 5,
+    sleep_fn: Callable[[float], None] = time.sleep,
+) -> None:
+    """Upload one batch, retrying transient failures with exponential backoff.
+
+    Azure Search uploads are idempotent upserts keyed on `id`, so re-sending a
+    whole batch after a transient error (e.g. ServiceResponseError 'write
+    operation timed out') is safe. Without this a single network blip mid-upload
+    aborts the entire build -- discarding an ~hour of extraction work.
+    """
+    for attempt in range(max_retries + 1):
+        try:
+            search_client.upload_documents(batch)
+            return
+        except Exception as exc:  # noqa: BLE001 - retry any transient upload error
+            if attempt == max_retries:
+                raise
+            delay = min(2 ** attempt, 30)
+            print(
+                f"  upload batch attempt {attempt} failed "
+                f"({type(exc).__name__}: {exc}); retrying in {delay}s",
+                file=sys.stderr,
+                flush=True,
+            )
+            sleep_fn(delay)
+
+
 def _upload_in_batches(
     search_client: Any, docs: list[dict[str, Any]], batch_size: int = 500
 ) -> None:  # pragma: no cover - network
     for start in range(0, len(docs), batch_size):
         batch = docs[start : start + batch_size]
-        search_client.upload_documents(batch)
+        _upload_batch_with_retry(search_client, batch)
         print(f"  uploaded {min(start + batch_size, len(docs))}/{len(docs)} chunks", flush=True)
 
 
@@ -437,7 +470,85 @@ def build_baseline(settings: Any, limit: int | None = None) -> None:  # pragma: 
     )
 
 
-def build_graph(settings: Any, limit: int | None = None) -> None:  # pragma: no cover
+def _graph_extract_workers(value: int | None = None) -> int:
+    """Resolve the graph extraction thread-pool size.
+
+    An explicit ``value`` wins; otherwise read ``RAGPIPE_GRAPH_EXTRACT_WORKERS``
+    (default 8). Each extraction LLM call is independent and gpt deployments
+    typically have ample TPM headroom, so the pool can be widened via env for a
+    stack with a larger quota without a code change. Floored at 1.
+    """
+    if value is None:
+        value = int(os.environ.get("RAGPIPE_GRAPH_EXTRACT_WORKERS", "8"))
+    return max(1, value)
+
+
+def _finish_graph(
+    settings: Any,
+    entities: list[Any],
+    relationships: list[Any],
+    communities: list[Any],
+    community_map: dict[str, int],
+) -> None:  # pragma: no cover - network
+    """Embed entity/relationship/community descriptions and upload them to the
+    three graph indexes. Shared by both build_graph paths (fresh extraction and
+    cache-resume) so the embed/upload tail lives in exactly one place."""
+    from azure.identity import DefaultAzureCredential
+    from azure.search.documents import SearchClient
+    from azure.search.documents.indexes import SearchIndexClient
+
+    from ragpipe.embeddings import build_batch_embed_fn
+    from ragpipe.graphrag import (
+        community_documents,
+        entity_documents,
+        relationship_documents,
+    )
+    from ragpipe.search_index import (
+        build_communities_index,
+        build_entities_index,
+        build_relationships_index,
+    )
+
+    cred = DefaultAzureCredential()
+    embed_batch = build_batch_embed_fn(settings)
+
+    # Build docs for all three indexes (embedding happens here, internally
+    # chunked by build_batch_embed_fn so the input array can't blow the TPM cap).
+    ent_docs = entity_documents(entities, community=community_map, embed_batch_fn=embed_batch)
+    rel_docs = relationship_documents(relationships, embed_batch_fn=embed_batch)
+    com_docs = community_documents(communities, embed_batch_fn=embed_batch)
+
+    # Create the three indexes.
+    dims = len(ent_docs[0]["description_vector"])
+    index_client = SearchIndexClient(settings.search_endpoint, cred)
+    index_client.create_or_update_index(build_entities_index(settings.graph_entities_index, dims))
+    index_client.create_or_update_index(build_relationships_index(settings.graph_relationships_index, dims))
+    index_client.create_or_update_index(build_communities_index(settings.graph_communities_index, dims))
+
+    # Upload each doc set (batched + retried inside _upload_in_batches).
+    ent_client = SearchClient(settings.search_endpoint, settings.graph_entities_index, cred)
+    rel_client = SearchClient(settings.search_endpoint, settings.graph_relationships_index, cred)
+    com_client = SearchClient(settings.search_endpoint, settings.graph_communities_index, cred)
+
+    print(f"Uploading {len(ent_docs)} entity docs to '{settings.graph_entities_index}'…", flush=True)
+    _upload_in_batches(ent_client, ent_docs)
+    print(f"Uploading {len(rel_docs)} relationship docs to '{settings.graph_relationships_index}'…", flush=True)
+    _upload_in_batches(rel_client, rel_docs)
+    print(f"Uploading {len(com_docs)} community docs to '{settings.graph_communities_index}'…", flush=True)
+    _upload_in_batches(com_client, com_docs)
+
+    print(
+        f"build_graph done: {len(entities)} entities, {len(relationships)} relationships, "
+        f"{len(communities)} communities → indexes "
+        f"'{settings.graph_entities_index}', '{settings.graph_relationships_index}', "
+        f"'{settings.graph_communities_index}'.",
+        flush=True,
+    )
+
+
+def build_graph(
+    settings: Any, limit: int | None = None, extract_workers: int | None = None
+) -> None:  # pragma: no cover
     """Ingest the GraphRAG indexes: entities, relationships, and communities.
 
     Steps:
@@ -452,29 +563,22 @@ def build_graph(settings: Any, limit: int | None = None) -> None:  # pragma: no 
     shortcut. A separate chat completion writes a short report over the member
     entities' descriptions for each community group.
     """
+    extract_workers = _graph_extract_workers(extract_workers)
+
     import sys
 
     import yaml
-    from azure.identity import DefaultAzureCredential
-    from azure.search.documents import SearchClient
-    from azure.search.documents.indexes import SearchIndexClient
 
     from ragpipe.context_gen import ContextGenerator, build_context_complete_fn
     from ragpipe.embeddings import build_batch_embed_fn
     from ragpipe.graphrag import (
         Community,
-        community_documents,
         detect_communities,
-        entity_documents,
+        load_graph_state,
         merge_entities,
         merge_relationships,
         parse_extraction,
-        relationship_documents,
-    )
-    from ragpipe.search_index import (
-        build_communities_index,
-        build_entities_index,
-        build_relationships_index,
+        save_graph_state,
     )
 
     with open("data/corpus_sources.yaml") as f:
@@ -482,7 +586,19 @@ def build_graph(settings: Any, limit: int | None = None) -> None:  # pragma: no 
     if limit is not None:
         urls = urls[:limit]
 
-    cred = DefaultAzureCredential()
+    cache_path = os.environ.get("RAGPIPE_GRAPH_CACHE", ".graph_cache.json")
+    cached = load_graph_state(cache_path, limit=limit)
+    if cached is not None:
+        entities, relationships, communities, community_map = cached
+        print(
+            f"Loaded graph state cache '{cache_path}': {len(entities)} entities, "
+            f"{len(relationships)} relationships, {len(communities)} communities "
+            f"(skipping extraction).",
+            flush=True,
+        )
+        _finish_graph(settings, entities, relationships, communities, community_map)
+        return
+
     embed_batch = build_batch_embed_fn(settings)
     complete_fn = build_context_complete_fn(settings)
     context_gen = ContextGenerator(complete_fn, model=settings.foundry_chat_model)
@@ -518,18 +634,28 @@ def build_graph(settings: Any, limit: int | None = None) -> None:  # pragma: no 
                 )
         return ""
 
-    # 2. Extract entities + relationships from each leaf doc.
-    print(f"Extracting entities/relationships from {len(leaf_docs)} leaf docs…", flush=True)
+    # 2. Extract entities + relationships from each leaf doc. The LLM call per
+    #    chunk is independent, so fan it out over a thread pool (one serial pass
+    #    over ~7744 chunks would take hours); parse in stable doc order afterward
+    #    so entity/relationship merge order is deterministic.
+    print(f"Extracting entities/relationships from {len(leaf_docs)} leaf docs (workers={extract_workers})…", flush=True)
+    raws: list[str] = [""] * len(leaf_docs)
+    done = 0
+    with ThreadPoolExecutor(max_workers=extract_workers) as pool:
+        futures = {pool.submit(extract_fn, doc["content"]): i for i, doc in enumerate(leaf_docs)}
+        for fut in as_completed(futures):
+            raws[futures[fut]] = fut.result()
+            done += 1
+            if done % 50 == 0:
+                print(f"  extracted {done}/{len(leaf_docs)} docs", flush=True)
+
     all_entities = []
     all_relationships = []
-    for i, doc in enumerate(leaf_docs):
-        raw = extract_fn(doc["content"])
+    for doc, raw in zip(leaf_docs, raws):
         if raw:
             ents, rels = parse_extraction(raw, source_chunk_id=doc["id"], source_url=doc["url"])
             all_entities.extend(ents)
             all_relationships.extend(rels)
-        if (i + 1) % 50 == 0:
-            print(f"  extracted {i + 1}/{len(leaf_docs)} docs ({len(all_entities)} entities so far)", flush=True)
 
     print(f"  raw: {len(all_entities)} entities, {len(all_relationships)} relationships", flush=True)
 
@@ -567,8 +693,8 @@ def build_graph(settings: Any, limit: int | None = None) -> None:  # pragma: no 
     )
 
     print(f"Generating community reports for {len(groups)} communities…", flush=True)
-    communities = []
-    for cid, members in sorted(groups.items()):
+
+    def make_report(cid: int, members: list) -> Community:
         ent_text = "\n".join(f"- {e.name} ({e.type}): {e.description[:120]}" for e in members[:20])
         rel_text = "\n".join(
             f"- {r.source} -> {r.target}: {r.description[:80]}"
@@ -588,45 +714,95 @@ def build_graph(settings: Any, limit: int | None = None) -> None:  # pragma: no 
                 )
         lines = report.splitlines()
         title = lines[0].strip() if lines else f"Community {cid}"
-        summary = "\n".join(lines[1:]).strip() if len(lines) > 1 else "; ".join(e.description[:80] for e in members[:5])
-        communities.append(Community(id=cid, level=0, title=title, summary=summary))
+        summary = (
+            "\n".join(lines[1:]).strip()
+            if len(lines) > 1
+            else "; ".join(e.description[:80] for e in members[:5])
+        )
+        return Community(id=cid, level=0, title=title, summary=summary)
+
+    # Community reports are independent LLM calls; fan them out over the same
+    # pool as extraction (1000+ communities done serially would dominate the
+    # run). Results are collected by index so community order stays deterministic.
+    ordered_groups = sorted(groups.items())
+    communities: list = [None] * len(ordered_groups)
+    done = 0
+    with ThreadPoolExecutor(max_workers=extract_workers) as pool:
+        futures = {
+            pool.submit(make_report, cid, members): i
+            for i, (cid, members) in enumerate(ordered_groups)
+        }
+        for fut in as_completed(futures):
+            communities[futures[fut]] = fut.result()
+            done += 1
+            if done % 100 == 0:
+                print(f"  generated {done}/{len(ordered_groups)} reports", flush=True)
 
     print(f"  generated {len(communities)} community reports.", flush=True)
 
-    # 4. Build docs for all three indexes.
-    ent_docs = entity_documents(entities, community=community_map, embed_batch_fn=embed_batch)
-    rel_docs = relationship_documents(relationships, embed_batch_fn=embed_batch)
-    com_docs = community_documents(communities, embed_batch_fn=embed_batch)
+    # Persist the expensive extraction + report output *before* the fragile
+    # embed/upload tail, so a transient failure there resumes from cache on the
+    # next run instead of re-spending the ~hour-long extraction. Best-effort:
+    # a cache-write failure must never abort an otherwise-successful build.
+    try:
+        save_graph_state(
+            cache_path,
+            limit=limit,
+            entities=entities,
+            relationships=relationships,
+            communities=communities,
+            community_map=community_map,
+        )
+        print(f"Saved graph state cache '{cache_path}'.", flush=True)
+    except Exception as exc:  # noqa: BLE001 - cache is best-effort, never fatal
+        print(
+            f"  warning: failed to save graph cache: {type(exc).__name__}: {exc}",
+            file=sys.stderr,
+            flush=True,
+        )
 
-    # 5. Create the three indexes.
-    dims = len(ent_docs[0]["description_vector"])
-    index_client = SearchIndexClient(settings.search_endpoint, cred)
-    index_client.create_or_update_index(build_entities_index(settings.graph_entities_index, dims))
-    index_client.create_or_update_index(build_relationships_index(settings.graph_relationships_index, dims))
-    index_client.create_or_update_index(build_communities_index(settings.graph_communities_index, dims))
+    _finish_graph(settings, entities, relationships, communities, community_map)
 
-    # 6. Upload each doc set.
-    ent_client = SearchClient(settings.search_endpoint, settings.graph_entities_index, cred)
-    rel_client = SearchClient(settings.search_endpoint, settings.graph_relationships_index, cred)
-    com_client = SearchClient(settings.search_endpoint, settings.graph_communities_index, cred)
 
-    print(f"Uploading {len(ent_docs)} entity docs to '{settings.graph_entities_index}'…", flush=True)
-    _upload_in_batches(ent_client, ent_docs)
-    print(f"Uploading {len(rel_docs)} relationship docs to '{settings.graph_relationships_index}'…", flush=True)
-    _upload_in_batches(rel_client, rel_docs)
-    print(f"Uploading {len(com_docs)} community docs to '{settings.graph_communities_index}'…", flush=True)
-    _upload_in_batches(com_client, com_docs)
+# Substrate builders dispatchable from the CLI. main() (contextual) is handled
+# separately because it builds its own Settings; these take (settings, limit).
+_BUILDERS: dict[str, Callable[[Any, int | None], None]] = {
+    "baseline": build_baseline,
+    "raptor": build_raptor,
+    "graph": build_graph,
+}
 
-    print(
-        f"build_graph done: {len(entities)} entities, {len(relationships)} relationships, "
-        f"{len(communities)} communities → indexes "
-        f"'{settings.graph_entities_index}', '{settings.graph_relationships_index}', "
-        f"'{settings.graph_communities_index}'.",
-        flush=True,
-    )
+
+def _parse_args(argv: list[str]) -> tuple[str, int | None]:
+    """Parse CLI args into a (command, limit) pair.
+
+    Backward compatible: no args or a leading integer selects the default
+    ``contextual`` build, so ``python -m ragpipe.ingest`` (the azure.yaml
+    postprovision hook) and ``python -m ragpipe.ingest 3`` (README smoke) keep
+    working. A leading command name selects a substrate builder, with an
+    optional trailing limit: ``python -m ragpipe.ingest graph 3``.
+    """
+    command = "contextual"
+    rest = argv
+    if argv and not argv[0].lstrip("-").isdigit():
+        command = argv[0]
+        rest = argv[1:]
+    if command != "contextual" and command not in _BUILDERS:
+        raise SystemExit(
+            f"unknown command {command!r}; expected one of: "
+            f"contextual, {', '.join(_BUILDERS)}"
+        )
+    limit = int(rest[0]) if rest else None
+    return command, limit
 
 
 if __name__ == "__main__":  # pragma: no cover
     import sys
 
-    main(limit=int(sys.argv[1]) if len(sys.argv) > 1 else None)
+    command, limit = _parse_args(sys.argv[1:])
+    if command == "contextual":
+        main(limit=limit)
+    else:
+        from ragpipe.config import Settings
+
+        _BUILDERS[command](Settings.from_env(), limit=limit)

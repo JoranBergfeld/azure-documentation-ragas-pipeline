@@ -1,7 +1,12 @@
 from __future__ import annotations
 
+import json
+import os
+import tempfile
+from dataclasses import asdict, dataclass, field
+from pathlib import Path
+
 import networkx as nx
-from dataclasses import dataclass, field
 
 
 @dataclass
@@ -191,5 +196,73 @@ def community_documents(
         }
         for i, c in enumerate(communities)
     ]
+
+
+# Persisted graph-state version. Bump to invalidate caches whose shape changed.
+GRAPH_STATE_VERSION = "v1"
+
+
+def save_graph_state(
+    path: str | Path,
+    *,
+    limit: int | None,
+    entities: list[Entity],
+    relationships: list[Relationship],
+    communities: list[Community],
+    community_map: dict[str, int],
+) -> None:
+    """Persist the expensive LLM-derived graph state (entities, relationships,
+    communities, entity->community map) so a re-run can skip the ~hour-long
+    extraction + report generation and resume at the embed/upload tail.
+
+    Written atomically via a uniquely-named temp file + os.replace (mirrors
+    context_gen._save_cache) so a crash mid-write can't leave a partial cache.
+    Keyed on `limit` so a `--limit N` smoke run never satisfies a full re-run.
+    """
+    payload = {
+        "version": GRAPH_STATE_VERSION,
+        "limit": limit,
+        "entities": [asdict(e) for e in entities],
+        "relationships": [asdict(r) for r in relationships],
+        "communities": [asdict(c) for c in communities],
+        "community_map": community_map,
+    }
+    path = Path(path)
+    directory = path.parent if str(path.parent) else Path(".")
+    fd, tmp = tempfile.mkstemp(dir=directory, prefix=path.name + ".", suffix=".tmp")
+    try:
+        with os.fdopen(fd, "w") as handle:
+            json.dump(payload, handle)
+        os.replace(tmp, path)
+    except BaseException:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
+
+
+def load_graph_state(
+    path: str | Path, *, limit: int | None
+) -> tuple[list[Entity], list[Relationship], list[Community], dict[str, int]] | None:
+    """Reload state written by save_graph_state. Returns None (never raises) when
+    the cache is missing, corrupt, a different version, or built for a different
+    `limit`, so the caller transparently falls back to a full rebuild."""
+    try:
+        payload = json.loads(Path(path).read_text())
+    except (OSError, ValueError):
+        return None
+    if not isinstance(payload, dict):
+        return None
+    if payload.get("version") != GRAPH_STATE_VERSION or payload.get("limit") != limit:
+        return None
+    try:
+        entities = [Entity(**e) for e in payload["entities"]]
+        relationships = [Relationship(**r) for r in payload["relationships"]]
+        communities = [Community(**c) for c in payload["communities"]]
+        community_map = {str(k): int(v) for k, v in payload["community_map"].items()}
+    except (KeyError, TypeError, ValueError):
+        return None
+    return entities, relationships, communities, community_map
 
 

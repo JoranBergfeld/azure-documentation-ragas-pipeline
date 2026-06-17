@@ -8,7 +8,9 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import sys
+import tempfile
 import threading
 from pathlib import Path
 from typing import Callable
@@ -54,9 +56,25 @@ class ContextGenerator:
             return {}  # missing or corrupt -> empty, never an error (ADR-0005)
 
     def _save_cache(self) -> None:
-        tmp = self._cache_path.with_suffix(".tmp")
-        tmp.write_text(json.dumps(self._cache))
-        tmp.replace(self._cache_path)
+        # Atomic write via a uniquely-named temp file in the same directory.
+        # A fixed ".tmp" name races across concurrent ingest processes (e.g.
+        # raptor + graph both decorate SAC leaves and share .context_cache.json):
+        # one process's replace() would move the temp out from under the other,
+        # raising FileNotFoundError. mkstemp guarantees a unique path; os.replace
+        # is atomic, so the last full-dict writer wins -- benign for a cache that
+        # is regenerated on demand.
+        directory = self._cache_path.parent if self._cache_path.parent != Path("") else Path(".")
+        fd, tmp = tempfile.mkstemp(dir=directory, prefix=self._cache_path.name + ".", suffix=".tmp")
+        try:
+            with os.fdopen(fd, "w") as handle:
+                json.dump(self._cache, handle)
+            os.replace(tmp, self._cache_path)
+        except BaseException:
+            try:
+                os.unlink(tmp)
+            except OSError:
+                pass
+            raise
 
     def _key(self, document: str, chunk: str) -> str:
         # Model is part of the key: a model swap (e.g. gpt-4o -> gpt-5.4) must

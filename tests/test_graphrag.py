@@ -82,3 +82,77 @@ def test_doc_shapers():
     cdocs = community_documents([c], embed_batch_fn=lambda t: [[0.2]] * len(t))
     assert cdocs[0]["id"] == "community-2"
     assert cdocs[0]["summary_vector"] == [0.2]
+
+
+def test_graph_state_round_trips_through_disk(tmp_path):
+    from ragpipe.graphrag import load_graph_state, save_graph_state
+
+    entities = [
+        Entity("AZURE FUNCTIONS", "service", "Serverless compute", ["c1"], ["u1"]),
+        Entity("BLOB STORAGE", "service", "Object storage", ["c2"], ["u2"]),
+    ]
+    relationships = [
+        Relationship("AZURE FUNCTIONS", "BLOB STORAGE", "triggered by", 8.0, ["c1"], ["u1"]),
+    ]
+    communities = [Community(id=0, level=0, title="Compute", summary="A cluster")]
+    community_map = {"AZURE FUNCTIONS": 0, "BLOB STORAGE": 0}
+
+    path = tmp_path / ".graph_cache.json"
+    save_graph_state(
+        path,
+        limit=None,
+        entities=entities,
+        relationships=relationships,
+        communities=communities,
+        community_map=community_map,
+    )
+    loaded = load_graph_state(path, limit=None)
+    assert loaded is not None
+    le, lr, lc, lm = loaded
+    assert le == entities
+    assert lr == relationships
+    assert lc == communities
+    assert lm == community_map
+
+
+def test_graph_state_save_is_atomic_and_leaves_no_temp(tmp_path):
+    from ragpipe.graphrag import save_graph_state
+
+    path = tmp_path / ".graph_cache.json"
+    save_graph_state(
+        path,
+        limit=3,
+        entities=[Entity("X", "t", "d")],
+        relationships=[],
+        communities=[Community(id=0, level=0, title="T", summary="S")],
+        community_map={"X": 0},
+    )
+    assert path.exists()
+    # no leftover temp files in the directory
+    assert [p.name for p in tmp_path.iterdir()] == [".graph_cache.json"]
+
+
+def test_graph_state_returns_none_on_limit_or_version_or_missing(tmp_path):
+    from ragpipe.graphrag import load_graph_state, save_graph_state
+
+    # missing file
+    assert load_graph_state(tmp_path / "nope.json", limit=None) is None
+
+    path = tmp_path / ".graph_cache.json"
+    save_graph_state(
+        path,
+        limit=3,
+        entities=[Entity("X", "t", "d")],
+        relationships=[],
+        communities=[],
+        community_map={},
+    )
+    # limit mismatch -> None (a smoke cache never satisfies a full run)
+    assert load_graph_state(path, limit=None) is None
+    assert load_graph_state(path, limit=3) is not None
+
+    # corrupt / wrong-version payload -> None
+    (tmp_path / "bad.json").write_text('{"version": "v0", "limit": 3}')
+    assert load_graph_state(tmp_path / "bad.json", limit=3) is None
+    (tmp_path / "garbage.json").write_text("not json")
+    assert load_graph_state(tmp_path / "garbage.json", limit=3) is None

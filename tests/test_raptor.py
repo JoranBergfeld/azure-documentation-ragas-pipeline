@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import numpy as np
+
 from ragpipe.raptor import RaptorNode, build_raptor_tree, cluster_embeddings
 
 
@@ -15,6 +17,18 @@ def test_cluster_separates_two_obvious_groups():
 def test_cluster_handles_tiny_input():
     labels = cluster_embeddings([[1.0, 2.0]], max_clusters=4, random_state=0)
     assert labels == [0]
+
+
+def test_cluster_separates_high_dim_groups():
+    # Real embeddings are ~1536-dim; full-covariance GMM/BIC directly on that is
+    # intractable (ADR-0013 calls for GMM/UMAP). The PCA reduction must keep
+    # clustering both correct and tractable on high-dim input.
+    rng = np.random.default_rng(0)
+    dim = 256
+    a = rng.standard_normal((20, dim)).tolist()
+    b = (rng.standard_normal((20, dim)) + 8.0).tolist()
+    labels = cluster_embeddings(a + b, max_clusters=8, random_state=0)
+    assert set(labels[:20]).isdisjoint(set(labels[20:]))
 
 
 def test_build_tree_produces_higher_level_nodes_and_terminates():

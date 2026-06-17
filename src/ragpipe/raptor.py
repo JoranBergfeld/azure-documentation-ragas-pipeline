@@ -4,20 +4,34 @@ from dataclasses import dataclass
 from typing import Callable
 
 import numpy as np
+from sklearn.decomposition import PCA
 from sklearn.mixture import GaussianMixture
 
 
 def cluster_embeddings(
-    vectors: list[list[float]], *, max_clusters: int = 50, random_state: int = 0
+    vectors: list[list[float]],
+    *,
+    max_clusters: int = 50,
+    random_state: int = 0,
+    pca_dims: int = 50,
 ) -> list[int]:
     """Hard-assign each vector to a cluster. Component count chosen by BIC over
     1..min(max_clusters, n-1) GaussianMixtures (RAPTOR uses GMM soft clustering;
     we take the argmax responsibility as a hard label). Degenerate inputs (<=2
-    vectors) return a single cluster."""
+    vectors) return a single cluster.
+
+    Embeddings are first reduced with PCA (ADR-0013: "GMM/UMAP"). Full-covariance
+    GMM/BIC directly on raw embedding dimensionality (e.g. 1536) is intractable --
+    the per-component covariance is d*d, so the BIC sweep blows up at every tree
+    level. PCA to a small dense space keeps clustering tractable, dependency-free
+    (scikit-learn is already a dep), and deterministic via ``random_state``."""
     n = len(vectors)
     if n <= 2:
         return [0] * n
     x = np.asarray(vectors, dtype=float)
+    n_components = min(pca_dims, n - 1, x.shape[1])
+    if n_components < x.shape[1]:
+        x = PCA(n_components=n_components, random_state=random_state).fit_transform(x)
     upper = min(max_clusters, n - 1)
     best_bic = float("inf")
     best_labels = [0] * n

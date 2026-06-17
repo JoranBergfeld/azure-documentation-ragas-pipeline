@@ -1,6 +1,14 @@
 import re
 
-from ragpipe.ingest import build_documents, prune_stale_documents
+import pytest
+
+from ragpipe.ingest import (
+    _graph_extract_workers,
+    _parse_args,
+    _upload_batch_with_retry,
+    build_documents,
+    prune_stale_documents,
+)
 
 
 def _fake_batch_embed(texts):
@@ -110,3 +118,63 @@ def test_prune_batches_large_stale_sets():
 
     assert pruned == 1200
     assert sorted(client.deleted, key=int) == existing
+
+
+def test_parse_args_defaults_to_contextual_for_backward_compat():
+    # The azure.yaml postprovision hook calls `python -m ragpipe.ingest` (no args)
+    # and the README smokes with a bare integer limit; both must stay 'contextual'.
+    assert _parse_args([]) == ("contextual", None)
+    assert _parse_args(["3"]) == ("contextual", 3)
+    assert _parse_args(["contextual", "5"]) == ("contextual", 5)
+
+
+def test_parse_args_selects_substrate_builders_with_optional_limit():
+    assert _parse_args(["baseline"]) == ("baseline", None)
+    assert _parse_args(["raptor", "3"]) == ("raptor", 3)
+    assert _parse_args(["graph", "10"]) == ("graph", 10)
+
+
+def test_parse_args_rejects_unknown_command():
+    with pytest.raises(SystemExit):
+        _parse_args(["bogus"])
+
+
+def test_graph_extract_workers_resolution(monkeypatch):
+    # explicit value always wins over the env
+    monkeypatch.setenv("RAGPIPE_GRAPH_EXTRACT_WORKERS", "24")
+    assert _graph_extract_workers(4) == 4
+    # env override applies when unset
+    assert _graph_extract_workers() == 24
+    # default when neither given
+    monkeypatch.delenv("RAGPIPE_GRAPH_EXTRACT_WORKERS", raising=False)
+    assert _graph_extract_workers() == 8
+    # floored at 1
+    assert _graph_extract_workers(0) == 1
+
+
+class _FlakyClient:
+    """upload_documents fails `fail_times` times, then succeeds; records calls."""
+
+    def __init__(self, fail_times):
+        self.fail_times = fail_times
+        self.calls = 0
+
+    def upload_documents(self, batch):
+        self.calls += 1
+        if self.calls <= self.fail_times:
+            raise RuntimeError("('Connection aborted.', write operation timed out)")
+
+
+def test_upload_batch_with_retry_recovers_from_transient_failures():
+    client = _FlakyClient(fail_times=2)
+    sleeps = []
+    _upload_batch_with_retry(client, [{"id": "1"}], sleep_fn=sleeps.append)
+    assert client.calls == 3  # 2 failures + 1 success
+    assert sleeps == [1, 2]  # exponential backoff between attempts
+
+
+def test_upload_batch_with_retry_raises_after_exhausting_retries():
+    client = _FlakyClient(fail_times=99)
+    with pytest.raises(RuntimeError):
+        _upload_batch_with_retry(client, [{"id": "1"}], max_retries=3, sleep_fn=lambda _d: None)
+    assert client.calls == 4  # initial attempt + 3 retries
