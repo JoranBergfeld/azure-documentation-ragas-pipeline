@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from ragpipe.graphrag import Entity, merge_entities, parse_extraction
+from ragpipe.graphrag import Entity, Relationship, detect_communities, merge_entities, parse_extraction
 
 
 def test_parse_extraction_reads_entities_and_relationships():
@@ -37,3 +37,11 @@ def test_merge_entities_unions_sources_and_descriptions():
     fn = by_name["AZURE FUNCTIONS"]
     assert set(fn.source_chunk_ids) == {"c1", "c2"}
     assert "Serverless compute" in fn.description and "Event-driven" in fn.description
+
+
+def test_detect_communities_groups_connected_entities():
+    rels = [Relationship("A", "B", "", 1.0), Relationship("B", "C", "", 1.0), Relationship("X", "Y", "", 1.0)]
+    comm = detect_communities(["A", "B", "C", "X", "Y"], rels, seed=0)
+    assert comm["A"] == comm["B"] == comm["C"]
+    assert comm["X"] == comm["Y"]
+    assert comm["A"] != comm["X"]
