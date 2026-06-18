@@ -44,6 +44,17 @@ meaningful. They should be shared.
    get a better score is cheating. The config makes this explicit: per-substrate index
    names are allowed, per-substrate retrieval budget knobs are not.
 
+5. **Per-mode standalone artifacts, written incrementally.** Besides the combined
+   roll-up, `run.py` writes one self-contained `eval_results_<mode>.json` (suffixed
+   with the mode value, e.g. `eval_results_graphrag.json`) the moment each mode
+   finishes. Each holds that mode's `means`, `means_by_tag`, `coverage`, and `records`
+   plus a top-level `mode` key, so it stands alone and is committed to the repo as the
+   reference result for that substrate. Because a full multi-mode run over the corpus is
+   agentic and takes hours, these files double as checkpoints: a re-run reuses any mode
+   whose file already exists and resumes at the next unfinished mode. The combined
+   `eval_results.json` is rebuilt from the per-mode aggregates at the end and stays
+   gitignored (a derived roll-up the dashboard/API read locally).
+
 ## Alternatives rejected
 
 - **Separate eval runs with separate config files, stitched by hand.** Reproducible only
@@ -72,6 +83,14 @@ meaningful. They should be shared.
   comparison; document it if a substrate needs a note.
 - The deterministic metrics require the source URLs to be present in the test set
   (ADR-0002). Test items without ground-truth URLs contribute to RAGAS metrics only.
+- The committed per-mode files (a few MB each, ~2–6 MB) make each substrate's results
+  reviewable in version control without re-running the judges; the combined
+  `eval_results.json` stays gitignored and derived.
+- The offline RAGAS judge is a reasoning model, so it is slow per job. The harness gives
+  it a dedicated `RunConfig` (longer per-job timeout, fewer concurrent workers than the
+  RAGAS defaults) — without it, faithfulness and context_precision time out to NaN under
+  the default 16-way concurrency. This trades wall-clock time for reliable coverage; a
+  full 5-mode run takes several hours.
 
 ## Sources
 

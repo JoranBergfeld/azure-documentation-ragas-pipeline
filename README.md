@@ -86,10 +86,22 @@ daily budget cap — do not expose it publicly unguarded.
 ```bash
 uv run python -m ragpipe.eval.run         # offline RAGAS harness over data/testset.jsonl
 
+# Compare retrieval modes side by side (ADR-0016). Each mode is replayed over the
+# same test set; pass a comma-separated subset (default: contextual,baseline):
+uv run python -m ragpipe.eval.run --modes contextual,baseline,raptor_sac,graphrag,combined
+
 # Also score context_precision/recall at each retrieval stage (dense/bm25/fused/
 # reranked) — heavier (one judge pass per stage), shown as a grouped chart:
 PER_STAGE_METRICS=true uv run python -m ragpipe.eval.run
 ```
+
+Each mode writes a standalone `eval_results_<mode>.json` (suffixed with the mode value,
+e.g. `eval_results_graphrag.json`) the moment it finishes; these committed files are the
+reference results for each substrate. The combined `eval_results.json` (read by `GET /eval`
+and the dashboard) is rebuilt from them at the end and stays gitignored. The per-mode
+files double as checkpoints: a re-run skips any mode whose file already exists, so an
+interrupted multi-hour run resumes at the next unfinished mode. To regenerate one mode,
+delete its `eval_results_<mode>.json` and re-run.
 
 Set `TESTSET_MODE=synthetic` in `.env` to generate the test set from the corpus instead.
 
