@@ -64,6 +64,24 @@ def _ensure_ragas_importable() -> None:  # pragma: no cover
     sys.modules["langchain_community.chat_models.vertexai"] = placeholder
 
 
+def prewarm_ragas_imports() -> None:
+    """Build the langchain/RAGAS judge models once, at a clean import time.
+
+    Streamlit re-executes the app script on every interaction ("reruns"). The
+    faithfulness gate imports ``langchain_openai`` the first time a query runs,
+    which lazily constructs langchain_core's ``RunnablePassthrough`` pydantic
+    model. langchain_core defers annotation evaluation
+    (``from __future__ import annotations``), and building that model for the
+    *first* time during a rerun loses the ``name: str | None = None`` default and
+    raises ``ValidationError: name Field required`` at
+    ``runnables/passthrough.py`` import. Forcing the import once at module load —
+    before Streamlit's first rerun — builds the model correctly and caches it for
+    the process lifetime. Idempotent: the underlying imports are memoised by
+    ``sys.modules``, so repeated calls are cheap no-ops.
+    """
+    _ensure_ragas_importable()
+
+
 def build_ragas_faithfulness(settings) -> MetricFn:
     """Faithfulness gate judged by a non-generator family (ADR-0009).
 

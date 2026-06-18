@@ -131,6 +131,12 @@ def main() -> None:  # pragma: no cover - UI entry point
     import streamlit as st
 
     from ragpipe.config import Settings
+    from ragpipe.guardrail import prewarm_ragas_imports
+
+    # Streamlit reruns corrupt the *first* langchain_openai import (pydantic
+    # ValidationError building RunnablePassthrough); build the judge models now,
+    # at load time, before any rerun can trigger the Run-tab pipeline build.
+    prewarm_ragas_imports()
 
     st.set_page_config(page_title="RAGAS-infused pipeline", layout="wide")
     st.title("RAGAS-infused pipeline")
