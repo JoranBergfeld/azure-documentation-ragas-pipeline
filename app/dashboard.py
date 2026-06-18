@@ -5,9 +5,15 @@ from pathlib import Path
 from typing import Any
 
 from ragpipe.models import PipelineState
+from ragpipe.retrieval.registry import registered_modes
 
 EVAL_RESULTS_PATH = "eval_results.json"
 PIPELINE_DIAGRAM_PATH = "docs/pipeline.mmd"
+
+
+def mode_options() -> list[str]:
+    """Runnable retrieval modes in registry order, for the Run-tab selector."""
+    return [m.value for m in registered_modes()]
 
 
 def chunk_label(chunk: Any) -> str:

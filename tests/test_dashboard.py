@@ -11,3 +11,12 @@ def test_stage_chunk_tables_uses_dynamic_stages():
     tables = stage_chunk_tables(s)
     assert "local" in tables
     assert "reranked" in tables
+
+
+def test_mode_options_lists_all_registered_modes_in_registry_order():
+    from app.dashboard import mode_options
+    from ragpipe.retrieval.registry import registered_modes
+
+    assert mode_options() == [m.value for m in registered_modes()]
+    assert len(mode_options()) == 9
+    assert mode_options()[0] == "contextual"
