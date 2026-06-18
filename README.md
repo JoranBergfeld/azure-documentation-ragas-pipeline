@@ -72,8 +72,13 @@ pipeline and the dashboard's pure helper functions.
 uv run uvicorn app.api:app --host 0.0.0.0 --port 8000
 ```
 
-- `POST /run` `{"query": "..."}` → answer, faithfulness, attempt, lowConfidence,
-  abstained, and per-stage chunk tables (`stages.{dense,bm25,fused,reranked}`).
+- `POST /run` `{"query": "...", "mode": "contextual"}` → answer, faithfulness, attempt,
+  lowConfidence, abstained, and per-stage chunk tables (`stages.{dense,bm25,fused,reranked}`).
+  `mode` is **required**; an omitted or unknown mode returns 422. Valid modes: `contextual`,
+  `baseline`, `raptor_sac`, `graphrag`, `combined`, and the agentic variants `baseline_agentic`,
+  `raptor_sac_agentic`, `graphrag_agentic`, `combined_agentic`.
+- `POST /compare` `{"query": "...", "modes": ["contextual", "baseline"]}` → the same payload
+  per mode under `results`.
 - `GET /eval` → RAGAS metrics from `eval_results.json` (`overall`, `perStage`, `nRecords`).
 - `GET /health` → `{"status":"ok"}`.
 
