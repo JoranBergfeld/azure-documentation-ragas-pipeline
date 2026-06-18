@@ -55,7 +55,7 @@ def test_run_returns_answer_and_stages(client):
 
     api.app.dependency_overrides[api.get_pipeline_fn_for_mode] = _make_factory(fake_pipeline)
     try:
-        res = client.post("/run", json={"query": "what is RRF?"})
+        res = client.post("/run", json={"query": "what is RRF?", "mode": "contextual"})
     finally:
         api.app.dependency_overrides.clear()
 
@@ -98,7 +98,7 @@ def test_run_reports_abstention():
 
     api.app.dependency_overrides[api.get_pipeline_fn_for_mode] = _make_factory(fake_pipeline)
     try:
-        resp = TestClient(api.app).post("/run", json={"query": "x"})
+        resp = TestClient(api.app).post("/run", json={"query": "x", "mode": "contextual"})
         assert resp.status_code == 200
         assert resp.json()["abstained"] is True
     finally:
@@ -138,6 +138,16 @@ def test_run_with_explicit_mode():
     body = resp.json()
     assert body["mode"] == "baseline"
     assert "answer" in body
+
+
+def test_run_requires_mode(client):
+    res = client.post("/run", json={"query": "x"})
+    assert res.status_code == 422
+
+
+def test_run_rejects_invalid_mode(client):
+    res = client.post("/run", json={"query": "x", "mode": "not-a-mode"})
+    assert res.status_code == 422
 
 
 def test_compare_runs_multiple_modes():

@@ -35,12 +35,12 @@ def get_pipeline_fn_for_mode() -> Callable[[str], Awaitable[Callable[[str], Awai
 
 class RunRequest(BaseModel):
     query: str
-    mode: str = "contextual"
+    mode: RetrievalMode
 
 
 class CompareRequest(BaseModel):
     query: str
-    modes: list[str]
+    modes: list[RetrievalMode]
 
 
 def _state_payload(mode: str, state: PipelineState) -> dict[str, Any]:
