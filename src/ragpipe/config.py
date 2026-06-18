@@ -66,8 +66,6 @@ class Settings:
     graph_entities_index: str = "graph-entities"
     graph_relationships_index: str = "graph-relationships"
     graph_communities_index: str = "graph-communities"
-    # Default mode for surfaces that don't specify one.
-    default_mode: RetrievalMode = RetrievalMode.CONTEXTUAL
     # Bounds for later phases (declared now so config is stable).
     agentic_max_iterations: int = 3
     raptor_max_levels: int = 3
@@ -114,7 +112,6 @@ class Settings:
             graph_entities_index=os.environ.get("GRAPH_ENTITIES_INDEX", "graph-entities"),
             graph_relationships_index=os.environ.get("GRAPH_RELATIONSHIPS_INDEX", "graph-relationships"),
             graph_communities_index=os.environ.get("GRAPH_COMMUNITIES_INDEX", "graph-communities"),
-            default_mode=RetrievalMode(os.environ.get("DEFAULT_MODE", "contextual")),
             agentic_max_iterations=int(os.environ.get("AGENTIC_MAX_ITERATIONS", "3")),
             raptor_max_levels=int(os.environ.get("RAPTOR_MAX_LEVELS", "3")),
             graph_community_levels=int(os.environ.get("GRAPH_COMMUNITY_LEVELS", "1")),

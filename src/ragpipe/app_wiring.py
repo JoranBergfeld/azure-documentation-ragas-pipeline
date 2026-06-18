@@ -22,7 +22,8 @@ def make_deps(settings, retrieve, reranker, generator, scorer) -> PipelineDeps:
 
 def build_pipeline_fn(
     settings: Settings,
-    mode=None,
+    *,
+    mode,
 ) -> Callable[[str], Awaitable[PipelineState]]:  # pragma: no cover - live wiring
     from functools import lru_cache
 
@@ -38,7 +39,6 @@ def build_pipeline_fn(
     from ragpipe.retrieval.rerank import SemanticReranker
     from ragpipe.search_index import SEMANTIC_CONFIG_NAME
 
-    mode = mode or settings.default_mode
     if isinstance(mode, str):
         mode = RetrievalMode(mode)
     cred = DefaultAzureCredential()

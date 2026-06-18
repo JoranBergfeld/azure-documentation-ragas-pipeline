@@ -81,3 +81,15 @@ def test_make_deps_threads_top_k_and_new_signatures():
     assert deps.top_k == 4
     deps.rerank("q", [], 9)
     assert rr.k == 9
+
+
+def test_build_pipeline_fn_requires_keyword_only_mode():
+    import inspect
+
+    from ragpipe.app_wiring import build_pipeline_fn
+
+    params = inspect.signature(build_pipeline_fn).parameters
+    assert "mode" in params
+    mode = params["mode"]
+    assert mode.default is inspect.Parameter.empty
+    assert mode.kind is inspect.Parameter.KEYWORD_ONLY

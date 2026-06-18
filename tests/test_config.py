@@ -89,3 +89,12 @@ def test_retrieval_mode_values():
     assert {"baseline", "baseline_agentic", "raptor_sac", "raptor_sac_agentic",
             "graphrag", "graphrag_agentic", "combined", "combined_agentic"} <= {
         m.value for m in RetrievalMode}
+
+
+def test_settings_has_no_default_mode_field():
+    import dataclasses
+
+    from ragpipe.config import Settings
+
+    names = {f.name for f in dataclasses.fields(Settings)}
+    assert "default_mode" not in names

@@ -138,11 +138,17 @@ def main() -> None:  # pragma: no cover - UI entry point
 
     with tab_run:
         query = st.text_input("Ask a Microsoft/Azure docs question")
+        mode = st.selectbox(
+            "Retrieval index / mode",
+            mode_options(),
+            help="Which substrate/index answers the query. *_agentic modes run "
+            "multiple retrieval rounds and are slower.",
+        )
         if st.button("Run", key="run_query") and query:
             from ragpipe.app_wiring import build_pipeline_fn
 
             settings = Settings.from_env()
-            pipeline_fn = build_pipeline_fn(settings)
+            pipeline_fn = build_pipeline_fn(settings, mode=mode)
             with st.spinner("Running pipeline (retrieve → rerank → generate → faithfulness)…"):
                 state = asyncio.run(pipeline_fn(query))
             st.subheader("Answer")
