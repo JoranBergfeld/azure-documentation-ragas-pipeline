@@ -137,3 +137,25 @@ def test_aggregate_by_mode():
     out = aggregate_by_mode({"baseline": [a], "contextual": [b]})
     assert out["baseline"]["hit_rate@reranked"] == 1.0
     assert out["contextual"]["hit_rate@reranked"] == 0.0
+
+
+def test_ragas_run_config_overrides_starving_defaults():
+    # The reasoning offline judge timed out under RAGAS defaults (timeout=180s,
+    # max_workers=16): every faithfulness/context_precision job hit the wall and
+    # dropped to NaN. The run config must give a longer per-job budget and fewer
+    # concurrent jobs so those metrics actually compute.
+    from ragpipe.eval.harness import (
+        RAGAS_JOB_TIMEOUT,
+        RAGAS_MAX_WORKERS,
+        _ragas_run_config,
+    )
+    from ragpipe.guardrail import _ensure_ragas_importable
+
+    _ensure_ragas_importable()
+    rc = _ragas_run_config()
+
+    assert rc.timeout == RAGAS_JOB_TIMEOUT
+    assert rc.max_workers == RAGAS_MAX_WORKERS
+    # Strictly more generous than the defaults that starved the reasoning judge.
+    assert rc.timeout > 180
+    assert rc.max_workers < 16

@@ -17,6 +17,31 @@ from ragpipe.models import PipelineState
 # metrics (faithfulness, relevancy) only exist after generation.
 RETRIEVAL_STAGES = ("dense", "bm25", "fused", "reranked")
 
+# Offline RAGAS judge budgets. The offline judge is a *reasoning* model
+# (DeepSeek, ADR-0009): a single faithfulness/context_precision job is several
+# sequential NLI calls over long context, each of which can run for minutes.
+# RAGAS's default RunConfig (timeout=180s, max_workers=16) starves it — 16
+# concurrent jobs queue on the one deployment and blow past 180s, so every heavy
+# job raises TimeoutError and the metric collapses to NaN (observed: faithfulness
+# 0/33, context_precision 1/33). A generous per-call timeout, a generous per-job
+# timeout, and fewer concurrent jobs let the reasoning judge actually finish.
+# These are separate from the online gate's JUDGE_TIMEOUT (foundry_judge) so
+# raising the offline eval budget does not slow live faithfulness gating.
+RAGAS_JUDGE_TIMEOUT = 300.0
+RAGAS_JOB_TIMEOUT = 600.0
+RAGAS_MAX_WORKERS = 8
+
+
+def _ragas_run_config():
+    """RunConfig that lets the reasoning offline judge finish its heavy metrics.
+
+    Widens the per-job timeout and cuts concurrency vs. RAGAS's defaults so
+    faithfulness/context_precision stop timing out (see the constants above).
+    """
+    from ragas.run_config import RunConfig
+
+    return RunConfig(timeout=RAGAS_JOB_TIMEOUT, max_workers=RAGAS_MAX_WORKERS)
+
 
 @dataclass
 class EvalRecord:
@@ -162,7 +187,7 @@ def _build_ragas_clients_live(settings):  # pragma: no cover - live Azure wiring
         openai_endpoint_from_project,
         services_endpoint_from_project,
     )
-    from ragpipe.foundry_judge import JUDGE_MAX_RETRIES, JUDGE_TIMEOUT
+    from ragpipe.foundry_judge import JUDGE_MAX_RETRIES
 
     token_provider = get_bearer_token_provider(
         DefaultAzureCredential(), "https://cognitiveservices.azure.com/.default"
@@ -173,7 +198,9 @@ def _build_ragas_clients_live(settings):  # pragma: no cover - live Azure wiring
     # server (sglang) validates it and rejects a null, unlike Azure OpenAI which
     # takes the deployment from the URL and ignores the body field.
     # timeout + max_retries bound every judge/embedding call: without them a
-    # stalled request blocks the eval forever (see embeddings._build_client).
+    # stalled request blocks the eval forever (see embeddings._build_client). The
+    # reasoning judge gets RAGAS_JUDGE_TIMEOUT (larger than the online gate's
+    # JUDGE_TIMEOUT) because faithfulness/context_precision calls run for minutes.
     llm = LangchainLLMWrapper(
         AzureChatOpenAI(
             azure_endpoint=services_endpoint_from_project(settings.foundry_project_endpoint),
@@ -181,7 +208,7 @@ def _build_ragas_clients_live(settings):  # pragma: no cover - live Azure wiring
             model=settings.offline_judge_model,
             api_version="2024-10-21",
             azure_ad_token_provider=token_provider,
-            timeout=JUDGE_TIMEOUT,
+            timeout=RAGAS_JUDGE_TIMEOUT,
             max_retries=JUDGE_MAX_RETRIES,
         )
     )
@@ -191,7 +218,7 @@ def _build_ragas_clients_live(settings):  # pragma: no cover - live Azure wiring
             azure_deployment=settings.foundry_embedding_model,
             api_version="2024-10-21",
             azure_ad_token_provider=token_provider,
-            timeout=JUDGE_TIMEOUT,
+            timeout=RAGAS_JUDGE_TIMEOUT,
             max_retries=JUDGE_MAX_RETRIES,
         )
     )
@@ -222,6 +249,7 @@ def build_ragas_evaluator(settings):  # pragma: no cover
         )
 
         llm, emb = _build_ragas_clients(settings)
+        run_config = _ragas_run_config()
 
         def _row(r: EvalRecord) -> dict:
             return {
@@ -239,7 +267,11 @@ def build_ragas_evaluator(settings):  # pragma: no cover
         if answered:
             ds = Dataset.from_list([_row(records[i]) for i in answered])
             result = evaluate(
-                ds, metrics=[faithfulness, answer_relevancy], llm=llm, embeddings=emb
+                ds,
+                metrics=[faithfulness, answer_relevancy],
+                llm=llm,
+                embeddings=emb,
+                run_config=run_config,
             )
             df = result.to_pandas()
             for j, i in enumerate(answered):
@@ -249,7 +281,11 @@ def build_ragas_evaluator(settings):  # pragma: no cover
 
         ds_all = Dataset.from_list([_row(r) for r in records])
         result = evaluate(
-            ds_all, metrics=[context_precision, context_recall], llm=llm, embeddings=emb
+            ds_all,
+            metrics=[context_precision, context_recall],
+            llm=llm,
+            embeddings=emb,
+            run_config=run_config,
         )
         df = result.to_pandas()
         for i, r in enumerate(records):
@@ -278,6 +314,7 @@ def build_per_stage_context_evaluator(settings, stages=RETRIEVAL_STAGES):  # pra
         from ragas.metrics import context_precision, context_recall
 
         llm, emb = _build_ragas_clients(settings)
+        run_config = _ragas_run_config()
         for stage in stages:
             ds = Dataset.from_list(
                 [
@@ -296,6 +333,7 @@ def build_per_stage_context_evaluator(settings, stages=RETRIEVAL_STAGES):  # pra
                 metrics=[context_precision, context_recall],
                 llm=llm,
                 embeddings=emb,
+                run_config=run_config,
             )
             df = result.to_pandas()
             for i, r in enumerate(records):

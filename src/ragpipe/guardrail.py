@@ -23,20 +23,31 @@ class FaithfulnessScorer:
 
 
 def _ensure_ragas_importable() -> None:  # pragma: no cover
-    """Work around a broken eager import in ragas 0.4.3.
+    """Work around two broken-import hazards before ``import ragas``.
 
-    ``ragas.llms.base`` does ``from langchain_community.chat_models.vertexai
-    import ChatVertexAI`` at module import time, but langchain-community 0.4.2
-    (the version pinned in this project) removed that module path, so a plain
-    ``import ragas`` raises ModuleNotFoundError before any of the symbols we
-    use are reachable. We only ever drive RAGAS with an Azure judge, so we
-    install a placeholder module that satisfies the import without pulling in
-    Google Vertex. If a real Vertex integration is ever present, this is a
-    no-op.
+    1. ``ragas.llms.base`` does ``from langchain_community.chat_models.vertexai
+       import ChatVertexAI`` at module import time, but langchain-community 0.4.2
+       (the version pinned in this project) removed that module path, so a plain
+       ``import ragas`` raises ModuleNotFoundError before any of the symbols we
+       use are reachable. We only ever drive RAGAS with an Azure judge, so we
+       install a placeholder module that satisfies the import without pulling in
+       Google Vertex. If a real Vertex integration is ever present, this is a
+       no-op.
+
+    2. ``import ragas`` pulls in ``langchain_core.runnables.passthrough``, which
+       constructs ``RunnablePassthrough()`` at module-import time. Depending on
+       the order langchain_core's pydantic models get built, that construction
+       can raise ``ValidationError: name Field required`` and leave a
+       half-imported ``langchain_openai`` cached in ``sys.modules`` that poisons
+       every later import. Importing ``langchain_openai`` first builds those
+       models in the order it expects, so the subsequent ragas import reuses the
+       good cached classes instead of triggering the broken build order.
     """
     import importlib
     import sys
     import types
+
+    importlib.import_module("langchain_openai")
 
     try:
         importlib.import_module("langchain_community.chat_models.vertexai")

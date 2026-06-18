@@ -5,12 +5,12 @@ import argparse
 import asyncio
 import json
 import math
+import os
 
 from ragpipe.app_wiring import build_pipeline_fn
 from ragpipe.config import RetrievalMode, Settings, TestsetMode
 from ragpipe.eval.harness import (
     aggregate,
-    aggregate_by_mode,
     aggregate_by_tag,
     build_per_stage_context_evaluator,
     build_ragas_evaluator,
@@ -29,6 +29,20 @@ def _clean(value):
     if isinstance(value, list):
         return [_clean(v) for v in value]
     return value
+
+
+def per_mode_filename(mode: str) -> str:
+    """Filename for a single mode's standalone eval results, suffixed with the
+    mode value (e.g. 'contextual' -> 'eval_results_contextual.json')."""
+    return f"eval_results_{mode}.json"
+
+
+def build_per_mode_payload(mode: str, mode_result: dict) -> dict:
+    """Self-contained per-mode result: the mode's aggregates + records tagged
+    with its name, so each file stands alone. Mirrors one entry of the combined
+    eval_results.json `modes` map plus a top-level `mode` key. Does not mutate
+    the input."""
+    return {"mode": mode, **mode_result}
 
 
 def _sample_corpus_docs(settings, limit: int = 40) -> list[dict]:  # pragma: no cover - live Azure
@@ -67,28 +81,48 @@ def main() -> None:  # pragma: no cover
     evaluator_fn = build_ragas_evaluator(settings)
 
     results_by_mode: dict[str, dict] = {}
-    records_by_mode: dict[str, list] = {}
     for mode in modes:
-        print(f"=== mode: {mode.value} ===")
+        mode_value = mode.value
+        filename = per_mode_filename(mode_value)
+        # Resume: a per-mode file left by an earlier (possibly interrupted) run is
+        # a completed checkpoint. Reuse it instead of re-running the expensive live
+        # pipeline + judges. Stripping the top-level "mode" key reconstructs this
+        # mode's entry in the combined file's `modes` map exactly.
+        if os.path.exists(filename):
+            with open(filename) as f:
+                cached = json.load(f)
+            results_by_mode[mode_value] = {k: v for k, v in cached.items() if k != "mode"}
+            print(f"=== mode: {mode_value} === (cached: {filename})", flush=True)
+            continue
+
+        print(f"=== mode: {mode_value} ===", flush=True)
         pipeline_fn = build_pipeline_fn(settings, mode=mode)
         records = asyncio.run(run_harness(items, pipeline_fn, evaluator_fn))
         if settings.per_stage_metrics:
             records = asyncio.run(build_per_stage_context_evaluator(settings)(records))
-        records_by_mode[mode.value] = records
-        results_by_mode[mode.value] = {
+        mode_result = _clean({
             "means": aggregate(records),
             "means_by_tag": aggregate_by_tag(records),
             "coverage": {k: {"valid": v, "total": t} for k, (v, t) in coverage(records).items()},
             "records": [r.__dict__ for r in records],
-        }
+        })
+        results_by_mode[mode_value] = mode_result
+        # Write the per-mode file the moment its mode finishes: each is a
+        # standalone, committable artifact and a checkpoint that lets a re-run
+        # resume at the next unfinished mode (this run can take hours).
+        with open(filename, "w") as f:
+            json.dump(build_per_mode_payload(mode_value, mode_result), f, indent=2, allow_nan=False)
+        print(f"wrote {filename}", flush=True)
 
-    payload = _clean({
-        "means_by_mode": aggregate_by_mode(records_by_mode),
-        "modes": results_by_mode,
-    })
+    # The combined eval_results.json the dashboard/API read. means_by_mode is just
+    # each mode's `means` (aggregate_by_mode), so it rebuilds from the per-mode
+    # aggregates without keeping every mode's records in memory.
+    means_by_mode = {m: r["means"] for m, r in results_by_mode.items()}
+    payload = {"means_by_mode": means_by_mode, "modes": results_by_mode}
     with open("eval_results.json", "w") as f:
         json.dump(payload, f, indent=2, allow_nan=False)
-    print(json.dumps({"means_by_mode": payload["means_by_mode"]}, indent=2))
+
+    print(json.dumps({"means_by_mode": means_by_mode}, indent=2))
 
 
 if __name__ == "__main__":  # pragma: no cover

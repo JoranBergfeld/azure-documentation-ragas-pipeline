@@ -172,7 +172,11 @@ def test_deepseek_offline_judge_passes_timeout_and_retries(monkeypatch):
 
     harness._build_ragas_clients_live(_S())
 
-    assert chat_kwargs["timeout"] == foundry_judge.JUDGE_TIMEOUT
+    # The offline RAGAS judge is a reasoning model whose faithfulness/
+    # context_precision calls run for minutes, so it gets its own larger budget
+    # (RAGAS_JUDGE_TIMEOUT) rather than the online gate's JUDGE_TIMEOUT — but it
+    # must still be built with a bounded timeout + retries (the point of this test).
+    assert chat_kwargs["timeout"] == harness.RAGAS_JUDGE_TIMEOUT
     assert chat_kwargs["max_retries"] == foundry_judge.JUDGE_MAX_RETRIES
-    assert emb_kwargs["timeout"] == foundry_judge.JUDGE_TIMEOUT
+    assert emb_kwargs["timeout"] == harness.RAGAS_JUDGE_TIMEOUT
     assert emb_kwargs["max_retries"] == foundry_judge.JUDGE_MAX_RETRIES
