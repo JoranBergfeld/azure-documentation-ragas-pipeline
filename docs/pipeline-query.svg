@@ -14,7 +14,7 @@
 
   <!-- ===== Stage 1: hybrid retrieval ===== -->
   <rect x="24" y="66" width="1132" height="180" rx="12" fill="#F5F8FB" stroke="#D6E4F0"/>
-  <text x="40" y="88" font-size="13" font-weight="700" fill="#5B6B7B">1 · Hybrid retrieval — two legs over the same index</text>
+  <text x="40" y="88" font-size="13" font-weight="700" fill="#5B6B7B">1 · Retrieval substrate — one retrieve(query, k) call (ADR-0012); stages are substrate-named, final set mirrored as "reranked"</text>
   <g>
     <rect x="40" y="130" width="110" height="52" rx="8" fill="#EEF2F6" stroke="#9AA8B5" stroke-width="1.5"/>
     <text x="95" y="160" text-anchor="middle" font-size="13" font-weight="600" fill="#1B2733">Question</text>
@@ -25,32 +25,20 @@
     <text x="285" y="138" text-anchor="middle" font-size="10.5" fill="#5B6B7B">text-embedding-3-small</text>
   </g>
   <g>
-    <rect x="420" y="102" width="230" height="52" rx="8" fill="#E3F0FB" stroke="#5AA0DC" stroke-width="1.5"/>
-    <text x="535" y="123" text-anchor="middle" font-size="12.5" font-weight="600" fill="#1B2733">DenseRetriever</text>
-    <text x="535" y="138" text-anchor="middle" font-size="10.5" fill="#5B6B7B">VectorizedQuery · HNSW cosine · top 5</text>
-  </g>
-  <g>
-    <rect x="420" y="176" width="230" height="52" rx="8" fill="#E3F0FB" stroke="#5AA0DC" stroke-width="1.5"/>
-    <text x="535" y="197" text-anchor="middle" font-size="12.5" font-weight="600" fill="#1B2733">BM25Retriever</text>
-    <text x="535" y="212" text-anchor="middle" font-size="10.5" fill="#5B6B7B">full-text keyword · top 5</text>
-  </g>
-  <g>
-    <rect x="700" y="138" width="180" height="52" rx="8" fill="#EEF2F6" stroke="#9AA8B5" stroke-width="1.5"/>
-    <text x="790" y="159" text-anchor="middle" font-size="12.5" font-weight="600" fill="#1B2733">RRF fusion</text>
-    <text x="790" y="174" text-anchor="middle" font-size="10.5" fill="#5B6B7B">score = Σ 1/(60 + rank) · ≤10 ids</text>
+    <rect x="420" y="138" width="300" height="52" rx="8" fill="#E3F0FB" stroke="#0078D4" stroke-width="1.5"/>
+    <text x="570" y="159" text-anchor="middle" font-size="12.5" font-weight="600" fill="#1B2733">Retrieval substrate</text>
+    <text x="570" y="174" text-anchor="middle" font-size="10.5" fill="#5B6B7B">HybridSubstrate · RaptorSAC · GraphRAG · Combined (± agentic)</text>
   </g>
   <g>
     <rect x="920" y="138" width="236" height="52" rx="8" fill="#E3F0FB" stroke="#0078D4" stroke-width="1.5"/>
     <text x="1038" y="159" text-anchor="middle" font-size="12.5" font-weight="600" fill="#1B2733">SemanticReranker</text>
-    <text x="1038" y="174" text-anchor="middle" font-size="10.5" fill="#5B6B7B">search.in(id) filter · rerankerScore · top 5</text>
+    <text x="1038" y="174" text-anchor="middle" font-size="10.5" fill="#5B6B7B">over candidates · top k (widens on retry)</text>
   </g>
   <path d="M150,142 L186,130" stroke="#6B7A88" stroke-width="1.6" fill="none" marker-end="url(#arrow)"/>
-  <path d="M150,170 L416,200" stroke="#6B7A88" stroke-width="1.6" fill="none" marker-end="url(#arrow)"/>
-  <path d="M380,128 L416,128" stroke="#6B7A88" stroke-width="1.6" fill="none" marker-end="url(#arrow)"/>
-  <path d="M650,128 L696,152" stroke="#6B7A88" stroke-width="1.6" fill="none" marker-end="url(#arrow)"/>
-  <path d="M650,202 L696,176" stroke="#6B7A88" stroke-width="1.6" fill="none" marker-end="url(#arrow)"/>
-  <path d="M880,164 L916,164" stroke="#6B7A88" stroke-width="1.6" fill="none" marker-end="url(#arrow)"/>
-  <text x="700" y="218" font-size="10.5" fill="#5B6B7B">chunks selected as id · title · url · content — the context field stays in the index (ADR-0003)</text>
+  <path d="M380,135 L416,158" stroke="#6B7A88" stroke-width="1.6" fill="none" marker-end="url(#arrow)"/>
+  <path d="M720,164 L916,164" stroke="#6B7A88" stroke-width="1.6" fill="none" marker-end="url(#arrow)"/>
+  <text x="570" y="208" text-anchor="middle" font-size="10.5" fill="#5B6B7B">emits substrate-named stages — dense·bm25·fused | local·global·fused | raptor_sac·graphrag | iter_N — final set mirrored as "reranked"</text>
+  <text x="590" y="226" text-anchor="middle" font-size="10.5" fill="#5B6B7B">chunks selected as id · title · url · content — the context field stays in the index (ADR-0003)</text>
 
   <!-- ===== Stage 2: grounded generation ===== -->
   <rect x="24" y="262" width="1132" height="130" rx="12" fill="#F5F8FB" stroke="#D6E4F0"/>
@@ -104,6 +92,6 @@
   <text x="730" y="520" font-size="11" font-weight="600" fill="#C56666">EXHAUSTED — attempt ≥ 2</text>
   <!-- retry loop back to generation -->
   <path d="M550,502 L550,570 L30,570 L30,400 L150,356" stroke="#2E9E4B" stroke-width="1.6" stroke-dasharray="6 4" fill="none" marker-end="url(#arrowTeal)"/>
-  <text x="180" y="564" font-size="11" font-weight="600" fill="#2E9E4B">RETRY — score &lt; 0.7 or NaN/None · regenerates with the SAME contexts (attempt + 1)</text>
-  <text x="40" y="600" font-size="10.5" fill="#5B6B7B">known quirks (next specs): refusal answers yield NaN → retried + flagged despite being honest; retry re-rolls generation only — no query rewrite, no judge feedback; judge = chat model (judge split → claude-sonnet-4-6 upcoming)</text>
+  <text x="180" y="564" font-size="11" font-weight="600" fill="#2E9E4B">RETRY — score &lt; 0.7 or NaN/None · re-reranks a widened window then regenerates (attempt + 1)</text>
+  <text x="40" y="600" font-size="10.5" fill="#5B6B7B">retry widens the rerank window over the same retrieved candidate set (no re-retrieval); the faithfulness judge is claude-sonnet-4-6 (online gate, ADR-0009/0011), a different family from the gpt-5.4 generator</text>
 </svg>
