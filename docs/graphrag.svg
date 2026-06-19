@@ -1,0 +1,124 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1180 640" font-family="-apple-system, Segoe UI, Helvetica, Arial, sans-serif">
+  <defs>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="userSpaceOnUse">
+      <path d="M0,0 L8,3 L0,6 Z" fill="#6B7A88"/>
+    </marker>
+    <marker id="arrowAz" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="userSpaceOnUse">
+      <path d="M0,0 L8,3 L0,6 Z" fill="#0078D4"/>
+    </marker>
+    <marker id="arrowTeal" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="userSpaceOnUse">
+      <path d="M0,0 L8,3 L0,6 Z" fill="#2E9E4B"/>
+    </marker>
+  </defs>
+  <rect x="0" y="0" width="1180" height="640" rx="14" fill="#FFFFFF"/>
+
+  <text x="32" y="34" font-size="22" font-weight="700" fill="#1B2733">GraphRAG substrate — flat graph on Azure AI Search</text>
+  <text x="32" y="52" font-size="13" fill="#5B6B7B">No graph DB: the graph is materialized into three search indexes; query = local ⊕ global, RRF-fused (ADR-0014)</text>
+
+  <!-- ===== Band 1: build time ===== -->
+  <rect x="24" y="70" width="1132" height="222" rx="12" fill="#F5F8FB" stroke="#D6E4F0"/>
+  <text x="40" y="92" font-size="13" font-weight="700" fill="#5B6B7B">Build time — ragpipe.ingest graph builder (offline)</text>
+
+  <g>
+    <rect x="40" y="160" width="110" height="52" rx="8" fill="#EEF2F6" stroke="#9AA8B5" stroke-width="1.5"/>
+    <text x="95" y="183" text-anchor="middle" font-size="12.5" font-weight="600" fill="#1B2733">chunks</text>
+    <text x="95" y="198" text-anchor="middle" font-size="10" fill="#5B6B7B">corpus text</text>
+  </g>
+  <g>
+    <rect x="190" y="160" width="210" height="52" rx="8" fill="#E3F0FB" stroke="#0078D4" stroke-width="1.5"/>
+    <text x="295" y="182" text-anchor="middle" font-size="12.5" font-weight="600" fill="#1B2733">LLM entity + relation extraction</text>
+    <text x="295" y="197" text-anchor="middle" font-size="10" fill="#5B6B7B">cached · .graph_cache.json (resume)</text>
+  </g>
+  <g>
+    <rect x="430" y="226" width="270" height="48" rx="8" fill="#E3F0FB" stroke="#0078D4" stroke-width="1.5"/>
+    <text x="565" y="246" text-anchor="middle" font-size="12.5" font-weight="600" fill="#1B2733">community detection + reports</text>
+    <text x="565" y="261" text-anchor="middle" font-size="10" fill="#5B6B7B">Leiden clusters · LLM report summaries</text>
+  </g>
+
+  <g>
+    <rect x="730" y="98" width="346" height="44" rx="8" fill="#E3F0FB" stroke="#0078D4" stroke-width="1.5"/>
+    <text x="903" y="116" text-anchor="middle" font-size="12.5" font-weight="600" fill="#1B2733">graph-entities</text>
+    <text x="903" y="131" text-anchor="middle" font-size="10" fill="#5B6B7B">name · type · description + embedding · source_urls</text>
+  </g>
+  <g>
+    <rect x="730" y="148" width="346" height="44" rx="8" fill="#E3F0FB" stroke="#0078D4" stroke-width="1.5"/>
+    <text x="903" y="166" text-anchor="middle" font-size="12.5" font-weight="600" fill="#1B2733">graph-relationships</text>
+    <text x="903" y="181" text-anchor="middle" font-size="10" fill="#5B6B7B">source · target · description · weight · source_urls</text>
+  </g>
+  <g>
+    <rect x="730" y="228" width="346" height="44" rx="8" fill="#E3F0FB" stroke="#0078D4" stroke-width="1.5"/>
+    <text x="903" y="246" text-anchor="middle" font-size="12.5" font-weight="600" fill="#1B2733">graph-communities</text>
+    <text x="903" y="261" text-anchor="middle" font-size="10" fill="#5B6B7B">level · title · report summary + embedding</text>
+  </g>
+  <text x="726" y="290" text-anchor="end" font-size="10.5" font-weight="600" fill="#0078D4">three Azure AI Search indexes</text>
+
+  <path d="M150,186 L186,186" stroke="#6B7A88" stroke-width="1.6" fill="none" marker-end="url(#arrow)"/>
+  <path d="M400,178 C 560,150 620,124 726,120" stroke="#6B7A88" stroke-width="1.6" fill="none" marker-end="url(#arrow)"/>
+  <path d="M400,190 C 560,180 620,172 726,170" stroke="#6B7A88" stroke-width="1.6" fill="none" marker-end="url(#arrow)"/>
+  <path d="M295,212 L520,224" stroke="#6B7A88" stroke-width="1.6" fill="none" marker-end="url(#arrow)"/>
+  <path d="M700,250 L726,250" stroke="#6B7A88" stroke-width="1.6" fill="none" marker-end="url(#arrow)"/>
+
+  <!-- ===== Band 2: query time ===== -->
+  <rect x="24" y="312" width="1132" height="270" rx="12" fill="#FAF7FD" stroke="#E2D6F0"/>
+  <text x="40" y="334" font-size="13" font-weight="700" fill="#5B6B7B">Query time — GraphRAGSubstrate.retrieve(query, k)</text>
+  <text x="1140" y="334" text-anchor="end" font-size="10.5" fill="#8661C5">combined mode RRF-fuses local ⊕ global with RAPTOR+SAC</text>
+
+  <g>
+    <rect x="36" y="428" width="100" height="52" rx="8" fill="#EEF2F6" stroke="#9AA8B5" stroke-width="1.5"/>
+    <text x="86" y="458" text-anchor="middle" font-size="12.5" font-weight="600" fill="#1B2733">query</text>
+  </g>
+
+  <!-- local path -->
+  <text x="160" y="368" font-size="11" font-weight="700" fill="#0078D4">LOCAL</text>
+  <g>
+    <rect x="160" y="374" width="210" height="48" rx="8" fill="#E3F0FB" stroke="#0078D4" stroke-width="1.5"/>
+    <text x="265" y="394" text-anchor="middle" font-size="12" font-weight="600" fill="#1B2733">hybrid search · graph-entities</text>
+    <text x="265" y="409" text-anchor="middle" font-size="10" fill="#5B6B7B">BM25 + vector → seed entities</text>
+  </g>
+  <g>
+    <rect x="400" y="374" width="200" height="48" rx="8" fill="#EEF2F6" stroke="#9AA8B5" stroke-width="1.5"/>
+    <text x="500" y="394" text-anchor="middle" font-size="12" font-weight="600" fill="#1B2733">1-hop expansion</text>
+    <text x="500" y="409" text-anchor="middle" font-size="10" fill="#5B6B7B">in-memory adjacency map</text>
+  </g>
+  <g>
+    <rect x="630" y="374" width="180" height="48" rx="8" fill="#EEF2F6" stroke="#9AA8B5" stroke-width="1.5"/>
+    <text x="720" y="394" text-anchor="middle" font-size="12" font-weight="600" fill="#1B2733">seeds + incident edges</text>
+    <text x="720" y="409" text-anchor="middle" font-size="10" fill="#8661C5">stages["local"]</text>
+  </g>
+
+  <!-- global path -->
+  <text x="160" y="490" font-size="11" font-weight="700" fill="#0078D4">GLOBAL</text>
+  <g>
+    <rect x="160" y="496" width="210" height="48" rx="8" fill="#E3F0FB" stroke="#0078D4" stroke-width="1.5"/>
+    <text x="265" y="516" text-anchor="middle" font-size="12" font-weight="600" fill="#1B2733">hybrid search · graph-communities</text>
+    <text x="265" y="531" text-anchor="middle" font-size="10" fill="#5B6B7B">BM25 + vector</text>
+  </g>
+  <g>
+    <rect x="400" y="496" width="200" height="48" rx="8" fill="#EEF2F6" stroke="#9AA8B5" stroke-width="1.5"/>
+    <text x="500" y="516" text-anchor="middle" font-size="12" font-weight="600" fill="#1B2733">community reports</text>
+    <text x="500" y="531" text-anchor="middle" font-size="10" fill="#8661C5">stages["global"]</text>
+  </g>
+
+  <!-- RRF + tail -->
+  <g>
+    <rect x="840" y="434" width="120" height="56" rx="8" fill="#EEF2F6" stroke="#9AA8B5" stroke-width="1.5"/>
+    <text x="900" y="457" text-anchor="middle" font-size="12.5" font-weight="600" fill="#1B2733">RRF fuse</text>
+    <text x="900" y="472" text-anchor="middle" font-size="10" fill="#8661C5">stages["fused"]</text>
+  </g>
+  <g>
+    <rect x="990" y="434" width="160" height="56" rx="8" fill="#E5F5E9" stroke="#2E9E4B" stroke-width="1.5"/>
+    <text x="1070" y="457" text-anchor="middle" font-size="12" font-weight="600" fill="#1B2733">shared pipeline tail</text>
+    <text x="1070" y="472" text-anchor="middle" font-size="9.5" fill="#5B6B7B">rerank → generate → faithfulness</text>
+  </g>
+
+  <path d="M136,446 L156,402" stroke="#6B7A88" stroke-width="1.6" fill="none" marker-end="url(#arrow)"/>
+  <path d="M136,462 L156,516" stroke="#6B7A88" stroke-width="1.6" fill="none" marker-end="url(#arrow)"/>
+  <path d="M370,398 L396,398" stroke="#6B7A88" stroke-width="1.6" fill="none" marker-end="url(#arrow)"/>
+  <path d="M600,398 L626,398" stroke="#6B7A88" stroke-width="1.6" fill="none" marker-end="url(#arrow)"/>
+  <path d="M370,520 L396,520" stroke="#6B7A88" stroke-width="1.6" fill="none" marker-end="url(#arrow)"/>
+  <path d="M810,398 C 850,408 850,428 868,432" stroke="#6B7A88" stroke-width="1.6" fill="none" marker-end="url(#arrow)"/>
+  <path d="M600,520 C 760,520 800,500 868,490" stroke="#6B7A88" stroke-width="1.6" fill="none" marker-end="url(#arrow)"/>
+  <path d="M960,462 L986,462" stroke="#2E9E4B" stroke-width="1.6" fill="none" marker-end="url(#arrowTeal)"/>
+
+  <text x="40" y="566" font-size="10.5" fill="#5B6B7B">adjacency map is read once from graph-relationships at startup; no query-time traversal over a remote store.</text>
+</svg>
