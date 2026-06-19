@@ -7,21 +7,31 @@ Agent Framework + Azure AI Foundry + Azure AI Search, evaluated with RAGAS.
 
 The whole flow: **① Ingest** crawls Microsoft Learn, extracts main content as
 markdown (code/tables preserved), splits on headings, decorates every chunk with a
-breadcrumb + cached LLM situating context (visible to retrieval only — see
-`docs/adr/`), and indexes it in Azure AI Search; **② Query pipeline** runs hybrid
-retrieval (dense + BM25) → RRF fusion → Azure semantic rerank (hybrid, so
-dense-only candidates survive) → Foundry generator agent, with a directive RAGAS
-faithfulness guardrail judged by Claude (ADR-0009) that widens retrieval and
-regenerates with corrective feedback on weak grounding, and abstains when
-retries exhaust;
-**③ Evaluation** replays the pipeline over a tagged test set and scores it with
-deterministic per-stage retrieval metrics (hit rate / MRR) plus the RAGAS suite,
-comparing against a frozen baseline.
+breadcrumb + cached LLM situating context (SAC — visible to retrieval only, see
+`docs/adr/0001`), and indexes it across the substrate indexes in Azure AI Search
+(`contextual`, `baseline`, `raptor-sac`, and the three `graph-*` indexes);
+**② Query pipeline** runs a **pluggable retrieval substrate** (ADR-0012) — one of
+**9 modes**: `contextual`, `baseline`, `raptor_sac` (RAPTOR collapsed-tree over SAC
+leaves, ADR-0013), `graphrag` (flat local+global graph, ADR-0014), `combined`
+(RAPTOR ⊕ GraphRAG, RRF-fused), and the four `*_agentic` wrappers (bounded
+plan→retrieve loop, ADR-0015) — then a shared tail: Azure semantic rerank → Foundry
+generator agent, with a directive RAGAS faithfulness guardrail judged by Claude
+(ADR-0009) that widens the rerank window and regenerates on weak grounding, and
+abstains when retries exhaust; **③ Evaluation** replays every mode over a tagged test
+set and scores deterministic per-stage retrieval metrics (hit rate / MRR) plus the
+RAGAS suite, comparing modes head-to-head against a frozen baseline (ADR-0016).
 
 Per-phase deep dives: [① Ingest](docs/pipeline-ingest.svg) ·
 [② Query pipeline](docs/pipeline-query.svg) · [③ Evaluation](docs/pipeline-eval.svg). (Source: [`docs/pipeline.svg`](docs/pipeline.svg); the live
 runtime workflow graph is also rendered in the dashboard's Architecture tab from
 [`docs/pipeline.mmd`](docs/pipeline.mmd).) See the design spec in `docs/superpowers/specs/`.
+
+Substrate deep dives — the multi-index retrieval seam (ADR-0012) and the flat graph
+(ADR-0014): [retrieval substrates](docs/retrieval-substrates.svg) · [GraphRAG](docs/graphrag.svg).
+
+![Retrieval substrate seam — multiple indexes](docs/retrieval-substrates.svg)
+
+![GraphRAG — flat graph on Azure AI Search](docs/graphrag.svg)
 
 ## Prerequisites
 
@@ -73,7 +83,8 @@ uv run uvicorn app.api:app --host 0.0.0.0 --port 8000
 ```
 
 - `POST /run` `{"query": "...", "mode": "contextual"}` → answer, faithfulness, attempt,
-  lowConfidence, abstained, and per-stage chunk tables (`stages.{dense,bm25,fused,reranked}`).
+  lowConfidence, abstained, and per-stage chunk tables (`stages` is a dynamic map —
+  each substrate names its own stages; the final set is always mirrored under `reranked`).
   `mode` is **required**; an omitted or unknown mode returns 422. Valid modes: `contextual`,
   `baseline`, `raptor_sac`, `graphrag`, `combined`, and the agentic variants `baseline_agentic`,
   `raptor_sac_agentic`, `graphrag_agentic`, `combined_agentic`.
@@ -95,8 +106,8 @@ uv run python -m ragpipe.eval.run         # offline RAGAS harness over data/test
 # same test set; pass a comma-separated subset (default: contextual,baseline):
 uv run python -m ragpipe.eval.run --modes contextual,baseline,raptor_sac,graphrag,combined
 
-# Also score context_precision/recall at each retrieval stage (dense/bm25/fused/
-# reranked) — heavier (one judge pass per stage), shown as a grouped chart:
+# Also score context_precision/recall at each retrieval stage (the substrate's own
+# stage names, final mirrored as reranked) — heavier (one judge pass per stage):
 PER_STAGE_METRICS=true uv run python -m ragpipe.eval.run
 ```
 
@@ -119,6 +130,20 @@ overlap-screened; see `docs/adr/0010`):
 
 ```bash
 uv run python scripts/generate_synthetic_testset.py https://learn.microsoft.com/en-us/azure/search/semantic-search-overview --per-page 5
+```
+
+### Evaluation results
+
+The committed per-mode `eval_results_<mode>.json` files render to a single comparison
+chart of the four core RAGAS metrics across the evaluated substrates (the `*_agentic`
+modes are retrieval wrappers with no standalone eval files, so they're not shown):
+
+![RAGAS evaluation across retrieval modes](docs/eval-results.svg)
+
+Regenerate it after a new eval run with:
+
+```bash
+uv run python scripts/plot_eval_results.py   # reads eval_results_<mode>.json → docs/eval-results.svg
 ```
 
 ## Test
