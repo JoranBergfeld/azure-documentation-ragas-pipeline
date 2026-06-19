@@ -104,7 +104,7 @@ def build_viz_workflow():
     """Build an Agent Framework Workflow purely for WorkflowViz diagram export.
 
     Executors are no-op passthroughs; their only purpose is to make the graph
-    topology (incl. the conditional loop edge faithfulness->rrf) renderable.
+    topology (incl. the conditional loop edge faithfulness->rerank) renderable.
     Runtime behavior lives in run_pipeline().
     """
     from agent_framework import Executor, WorkflowBuilder, WorkflowContext, handler
@@ -126,12 +126,9 @@ def build_viz_workflow():
     class _Stage(Executor):
         go = handler(_go)
 
-    # A dispatch start node so BOTH dense and bm25 are reachable from the start
-    # (WorkflowBuilder requires every executor be reachable from the start node).
+    # A single retrieval node stands in for the pluggable substrate (ADR-0012).
     start = _Stage(id="start")
-    dense = _Stage(id="dense")
-    bm25 = _Stage(id="bm25")
-    rrf = _Stage(id="rrf")
+    retrieve = _Stage(id="retrieve")
     rerank = _Stage(id="rerank")
     generate = _Stage(id="generate")
     faithfulness = _Stage(id="faithfulness")
@@ -141,15 +138,13 @@ def build_viz_workflow():
         return True  # label-only; real decision is in run_pipeline()
 
     builder = WorkflowBuilder(start_executor=start)
-    builder.add_edge(start, dense)
-    builder.add_edge(start, bm25)
-    builder.add_edge(dense, rrf)
-    builder.add_edge(bm25, rrf)
-    builder.add_edge(rrf, rerank)
+    builder.add_edge(start, retrieve)
+    builder.add_edge(retrieve, rerank)
     builder.add_edge(rerank, generate)
     builder.add_edge(generate, faithfulness)
-    # Retries re-enter at rerank (widened window over the fixed fused set),
-    # not at rrf — retrieval + fusion run once per query (ADR-0009).
+    # Retries re-enter at rerank (widened window over the fixed candidate set),
+    # never re-running retrieval — retrieval is one substrate call per query
+    # (ADR-0009/0012).
     builder.add_edge(faithfulness, rerank, condition=low_faithfulness)
     builder.add_edge(faithfulness, answer)
     return builder.build()
