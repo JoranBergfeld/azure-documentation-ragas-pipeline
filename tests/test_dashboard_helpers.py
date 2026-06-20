@@ -1,9 +1,14 @@
+from pathlib import Path
+
 from ragpipe.models import Chunk, PipelineState
 from app.dashboard import (
+    available_architecture_diagrams,
     chunk_label,
     eval_rows,
+    is_agentic_mode,
     per_stage_chart_data,
     stage_chunk_tables,
+    stage_expanded,
     stage_rows,
 )
 
@@ -96,3 +101,88 @@ def test_per_stage_chart_data_pivots_in_pipeline_order():
 
 def test_per_stage_chart_data_empty_without_stage_keys():
     assert per_stage_chart_data({"means": {"faithfulness": 0.9}}) == {}
+
+
+def test_is_agentic_mode_detects_agentic_suffix():
+    assert is_agentic_mode("baseline_agentic") is True
+    assert is_agentic_mode("combined_agentic") is True
+    assert is_agentic_mode("contextual") is False
+    assert is_agentic_mode("graphrag") is False
+
+
+def test_stage_expanded_opens_reranked_always_and_iter0_only_for_agentic():
+    # reranked is the final set: always open, regardless of mode
+    assert stage_expanded("reranked", "contextual") is True
+    assert stage_expanded("reranked", "baseline_agentic") is True
+    # iter_0 (the first planner sub-query round) opens only for agentic modes
+    assert stage_expanded("iter_0", "baseline_agentic") is True
+    assert stage_expanded("iter_0", "contextual") is False
+    # other stages stay collapsed
+    assert stage_expanded("iter_1", "baseline_agentic") is False
+    assert stage_expanded("dense", "contextual") is False
+
+
+def test_per_stage_chart_data_orders_agentic_iters_before_fused_then_reranked():
+    # iter_N are the agentic sub-query rounds; they must read iter_0..iter_N ->
+    # fused -> reranked even when the means dict lists them scrambled.
+    results = {
+        "means": {
+            "context_recall@reranked": 0.9,
+            "context_recall@fused": 0.7,
+            "context_recall@iter_1": 0.6,
+            "context_recall@iter_0": 0.5,
+        }
+    }
+    data = per_stage_chart_data(results)
+    assert list(data.keys()) == ["iter_0", "iter_1", "fused", "reranked"]
+
+
+def test_per_stage_chart_data_orders_iters_numerically_not_lexically():
+    results = {
+        "means": {
+            "context_recall@iter_2": 0.2,
+            "context_recall@iter_10": 0.1,
+            "context_recall@reranked": 0.9,
+        }
+    }
+    data = per_stage_chart_data(results)
+    # iter_10 must come after iter_2 (numeric), reranked last
+    assert list(data.keys()) == ["iter_2", "iter_10", "reranked"]
+
+
+def test_per_stage_chart_data_keeps_hybrid_dense_bm25_order():
+    # HybridSubstrate (contextual/baseline/raptor_sac) still emits dense/bm25/fused;
+    # they must stay in retrieval order ahead of fused -> reranked.
+    results = {
+        "means": {
+            "context_recall@reranked": 0.9,
+            "context_recall@fused": 0.7,
+            "context_recall@bm25": 0.6,
+            "context_recall@dense": 0.5,
+        }
+    }
+    data = per_stage_chart_data(results)
+    assert list(data.keys()) == ["dense", "bm25", "fused", "reranked"]
+
+
+def test_per_stage_chart_data_orders_graphrag_local_global_before_fused():
+    results = {
+        "means": {
+            "context_recall@reranked": 0.9,
+            "context_recall@fused": 0.7,
+            "context_recall@global": 0.6,
+            "context_recall@local": 0.5,
+        }
+    }
+    data = per_stage_chart_data(results)
+    assert list(data.keys()) == ["local", "global", "fused", "reranked"]
+
+
+def test_available_architecture_diagrams_returns_committed_substrate_svgs():
+    diagrams = available_architecture_diagrams()
+    paths = [path for _caption, path in diagrams]
+    assert "docs/retrieval-substrates.svg" in paths
+    assert "docs/graphrag.svg" in paths
+    # every returned diagram exists on disk and carries a human caption
+    for caption, path in diagrams:
+        assert caption and Path(path).exists()
