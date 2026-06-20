@@ -88,6 +88,12 @@ uv run uvicorn app.api:app --host 0.0.0.0 --port 8000
   `mode` is **required**; an omitted or unknown mode returns 422. Valid modes: `contextual`,
   `baseline`, `raptor_sac`, `graphrag`, `combined`, and the agentic variants `baseline_agentic`,
   `raptor_sac_agentic`, `graphrag_agentic`, `combined_agentic`.
+- `POST /run/stream` — same body as `/run`; returns a `text/event-stream` (Server-Sent Events).
+  Frames: `event: progress` (one per phase boundary — `retrieve`, `rerank`, `generate`,
+  `faithfulness`, `decision`; agentic modes also emit `retrieve.plan` / `retrieve.iter` /
+  `retrieve.fuse` sub-rounds), then a terminal `event: result` carrying the same payload as
+  `/run`, or `event: error` on failure. Drives the dashboard's live step checklist and external
+  web clients.
 - `POST /compare` `{"query": "...", "modes": ["contextual", "baseline"]}` → the same payload
   per mode under `results`.
 - `GET /eval` → RAGAS metrics from `eval_results.json` (`overall`, `perStage`, `nRecords`).
