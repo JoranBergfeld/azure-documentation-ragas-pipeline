@@ -29,6 +29,12 @@ def is_agentic_mode(mode: str) -> bool:
     return mode.endswith("_agentic")
 
 
+def progress_step_view(event) -> tuple[str, str]:
+    """Render a ProgressEvent as (icon, label) for the Run-tab live checklist."""
+    icon = {"start": "⏳", "complete": "✅", "error": "⚠️"}.get(event.status, "•")
+    return icon, event.message or event.phase
+
+
 def stage_expanded(label: str, mode: str) -> bool:
     """Which per-stage trace expanders open by default. Always ``reranked`` (the
     final set fed to the generator); plus ``iter_0`` for agentic modes so the
@@ -214,8 +220,24 @@ def main() -> None:  # pragma: no cover - UI entry point
 
             settings = Settings.from_env()
             pipeline_fn = build_pipeline_fn(settings, mode=mode)
-            with st.spinner("Running pipeline (retrieve → rerank → generate → faithfulness)…"):
-                state = asyncio.run(pipeline_fn(query))
+            status = st.status("Running pipeline…", expanded=True)
+            placeholders: dict[tuple, Any] = {}
+
+            def on_event(ev) -> None:
+                icon, label = progress_step_view(ev)
+                key = (ev.phase, ev.attempt, ev.detail.get("index", -1))
+                ph = placeholders.get(key)
+                if ph is None:
+                    ph = status.empty()
+                    placeholders[key] = ph
+                ph.markdown(f"{icon} {label}")
+
+            state = asyncio.run(pipeline_fn(query, on_event=on_event))
+            status.update(
+                label="Abstained — insufficient grounded context" if state.abstained else "Pipeline complete",
+                state="error" if state.abstained else "complete",
+                expanded=False,
+            )
             st.subheader("Answer")
             st.write(state.answer)
             score = "n/a" if state.faithfulness is None else f"{state.faithfulness:.2f}"

@@ -7,6 +7,7 @@ from app.dashboard import (
     eval_rows,
     is_agentic_mode,
     per_stage_chart_data,
+    progress_step_view,
     stage_chunk_tables,
     stage_expanded,
     stage_rows,
@@ -186,3 +187,22 @@ def test_available_architecture_diagrams_returns_committed_substrate_svgs():
     # every returned diagram exists on disk and carries a human caption
     for caption, path in diagrams:
         assert caption and Path(path).exists()
+
+
+def test_progress_step_view_icons_by_status():
+    from ragpipe.progress import ProgressEvent
+
+    start = ProgressEvent(phase="generate", status="start", message="Generating answer (attempt 1)")
+    done = ProgressEvent(phase="faithfulness", status="complete", message="Faithfulness 0.82")
+    err = ProgressEvent(phase="faithfulness", status="error", message="Faithfulness judge failed")
+
+    assert progress_step_view(start) == ("⏳", "Generating answer (attempt 1)")
+    assert progress_step_view(done) == ("✅", "Faithfulness 0.82")
+    assert progress_step_view(err) == ("⚠️", "Faithfulness judge failed")
+
+
+def test_progress_step_view_falls_back_to_phase_when_no_message():
+    from ragpipe.progress import ProgressEvent
+
+    ev = ProgressEvent(phase="retrieve.fuse", status="complete")
+    assert progress_step_view(ev) == ("✅", "retrieve.fuse")
