@@ -10,7 +10,7 @@ def _chunk(cid):
 
 
 def _fake_retrieve(chunks):
-    async def retrieve(query, k):
+    async def retrieve(query, k, on_event=None):
         return RetrievalResult(
             candidates=chunks,
             stages={"dense": chunks, "bm25": [], "fused": chunks},
@@ -111,3 +111,59 @@ async def test_judge_exception_abstains_without_retry():
     assert state.attempt == 0  # no retries burned
     assert state.abstained is True
     assert state.answer == ABSTENTION_ANSWER
+
+
+def _events():
+    captured: list = []
+    return captured, captured.append
+
+
+@pytest.mark.asyncio
+async def test_emits_phase_events_on_pass():
+    events, sink = _events()
+    await run_pipeline("q", _deps([0.9]), on_event=sink)
+    seq = [(e.phase, e.status) for e in events]
+    assert ("retrieve", "start") in seq and ("retrieve", "complete") in seq
+    assert ("rerank", "start") in seq and ("rerank", "complete") in seq
+    assert ("generate", "start") in seq and ("generate", "complete") in seq
+    assert ("faithfulness", "complete") in seq
+    decision = [e for e in events if e.phase == "decision"][-1]
+    assert decision.detail["decision"] == "pass"
+    assert decision.detail["score"] == 0.9
+
+
+@pytest.mark.asyncio
+async def test_emits_per_attempt_events_on_retry():
+    events, sink = _events()
+    await run_pipeline("q", _deps([0.4, 0.85]), on_event=sink)
+    gen_starts = [e.attempt for e in events if e.phase == "generate" and e.status == "start"]
+    assert gen_starts == [0, 1]
+    decisions = [e.detail["decision"] for e in events if e.phase == "decision"]
+    assert decisions == ["retry", "pass"]
+
+
+@pytest.mark.asyncio
+async def test_emits_abstain_event_on_exhaustion():
+    events, sink = _events()
+    await run_pipeline("q", _deps([0.1, 0.2, 0.3]), on_event=sink)
+    assert any(e.phase == "abstain" and e.status == "complete" for e in events)
+    assert [e for e in events if e.phase == "decision"][-1].detail["decision"] == "exhausted"
+
+
+@pytest.mark.asyncio
+async def test_emits_faithfulness_error_event_on_judge_failure():
+    events, sink = _events()
+    deps = _deps([0.9])
+
+    def boom(q, a, c):
+        raise RuntimeError("judge down")
+
+    deps.score = boom
+    await run_pipeline("q", deps, on_event=sink)
+    assert any(e.phase == "faithfulness" and e.status == "error" for e in events)
+
+
+@pytest.mark.asyncio
+async def test_no_sink_keeps_behavior_unchanged():
+    state = await run_pipeline("q", _deps([0.9]))  # default on_event=None
+    assert state.faithfulness == 0.9 and state.abstained is False
