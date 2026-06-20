@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Any, Awaitable, Callable
 
 from fastapi import Depends, FastAPI
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 from app.dashboard import (
@@ -15,6 +16,7 @@ from app.dashboard import (
 )
 from ragpipe.config import RetrievalMode, Settings
 from ragpipe.models import PipelineState
+from ragpipe.streaming import pipeline_event_stream
 
 app = FastAPI(title="ragpipe API")
 
@@ -56,6 +58,10 @@ def _state_payload(mode: str, state: PipelineState) -> dict[str, Any]:
     }
 
 
+def _sse(event: str, data: dict) -> str:
+    return f"event: {event}\ndata: {json.dumps(data)}\n\n"
+
+
 @app.get("/health")
 def health() -> dict[str, str]:
     return {"status": "ok"}
@@ -71,6 +77,27 @@ async def run(
     pipeline_fn = await factory(req.mode)
     state = await pipeline_fn(req.query)
     return _state_payload(req.mode, state)
+
+
+@app.post("/run/stream")
+async def run_stream(
+    req: RunRequest,
+    factory: Callable[[str], Awaitable[Callable[..., Awaitable[PipelineState]]]] = Depends(
+        get_pipeline_fn_for_mode
+    ),
+) -> StreamingResponse:
+    pipeline_fn = await factory(req.mode)
+
+    async def frames():
+        async for kind, payload in pipeline_event_stream(pipeline_fn, req.query):
+            if kind == "progress":
+                yield _sse("progress", payload.to_dict())
+            elif kind == "result":
+                yield _sse("result", _state_payload(req.mode, payload))
+            else:  # "error"
+                yield _sse("error", {"error": type(payload).__name__})
+
+    return StreamingResponse(frames(), media_type="text/event-stream")
 
 
 @app.post("/compare")

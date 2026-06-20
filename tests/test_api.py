@@ -191,3 +191,41 @@ def test_eval_new_shape(client, tmp_path, monkeypatch):
     body = res.json()
     assert "meansByMode" in body
     assert set(body["modes"]) == {"baseline", "contextual"}
+
+
+def test_run_stream_emits_progress_and_result():
+    from ragpipe.progress import ProgressEvent
+
+    async def fake_pipeline(query, *, on_event=None):
+        on_event(ProgressEvent(phase="retrieve", status="start", message="Retrieving"))
+        on_event(ProgressEvent(phase="generate", status="complete", attempt=0, message="Answer generated"))
+        return _state()
+
+    api.app.dependency_overrides[api.get_pipeline_fn_for_mode] = _make_factory(fake_pipeline)
+    try:
+        res = TestClient(api.app).post("/run/stream", json={"query": "what is RRF?", "mode": "contextual"})
+    finally:
+        api.app.dependency_overrides.clear()
+
+    assert res.status_code == 200
+    assert res.headers["content-type"].startswith("text/event-stream")
+    body = res.text
+    assert "event: progress" in body
+    assert "event: result" in body
+    assert '"phase": "retrieve"' in body
+    assert "RRF merges ranked lists." in body  # serialized final state
+
+
+def test_run_stream_emits_error_frame_on_failure():
+    async def boom_pipeline(query, *, on_event=None):
+        raise RuntimeError("kaboom")
+
+    api.app.dependency_overrides[api.get_pipeline_fn_for_mode] = _make_factory(boom_pipeline)
+    try:
+        res = TestClient(api.app).post("/run/stream", json={"query": "x", "mode": "contextual"})
+    finally:
+        api.app.dependency_overrides.clear()
+
+    assert res.status_code == 200
+    assert "event: error" in res.text
+    assert "RuntimeError" in res.text
