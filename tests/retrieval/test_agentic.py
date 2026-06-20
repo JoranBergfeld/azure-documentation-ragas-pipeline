@@ -44,3 +44,29 @@ async def test_agentic_falls_back_to_original_query_when_plan_empty():
     sub = AgenticSubstrate(name="x_agentic", inner=inner, plan_fn=lambda q: [], max_iterations=3)
     await sub.retrieve("original", k=5)
     assert inner.queries == ["original"]
+
+
+@pytest.mark.asyncio
+async def test_agentic_emits_plan_iter_fuse_events():
+    inner = _RecordingSub()
+    events: list = []
+    sub = AgenticSubstrate(
+        name="baseline_agentic", inner=inner,
+        plan_fn=lambda q: ["sub a", "sub b"], max_iterations=3,
+    )
+    await sub.retrieve("original", k=5, on_event=events.append)
+
+    phases = [(e.phase, e.status) for e in events]
+    assert ("retrieve.plan", "complete") in phases
+    iters = [e for e in events if e.phase == "retrieve.iter" and e.status == "complete"]
+    assert [e.detail["index"] for e in iters] == [0, 1]
+    assert all(e.detail["total"] == 2 for e in iters)
+    assert ("retrieve.fuse", "complete") in phases
+
+
+@pytest.mark.asyncio
+async def test_agentic_unchanged_when_on_event_none():
+    inner = _RecordingSub()
+    sub = AgenticSubstrate(name="x_agentic", inner=inner, plan_fn=lambda q: ["a"], max_iterations=2)
+    result = await sub.retrieve("original", k=5)  # no sink
+    assert "iter_0" in result.stages and "fused" in result.stages
