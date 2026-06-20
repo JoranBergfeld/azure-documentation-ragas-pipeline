@@ -24,7 +24,7 @@ def build_pipeline_fn(
     settings: Settings,
     *,
     mode,
-) -> Callable[[str], Awaitable[PipelineState]]:  # pragma: no cover - live wiring
+) -> Callable[..., Awaitable[PipelineState]]:  # pragma: no cover - live wiring
     from functools import lru_cache
 
     from azure.identity import DefaultAzureCredential
@@ -133,7 +133,7 @@ def build_pipeline_fn(
         scorer=FaithfulnessScorer(build_ragas_faithfulness(settings)),
     )
 
-    async def pipeline_fn(query: str) -> PipelineState:
-        return await run_pipeline(query, deps)
+    async def pipeline_fn(query: str, *, on_event=None) -> PipelineState:
+        return await run_pipeline(query, deps, on_event=on_event)
 
     return pipeline_fn

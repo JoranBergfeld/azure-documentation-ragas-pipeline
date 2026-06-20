@@ -19,11 +19,11 @@ from ragpipe.models import PipelineState
 app = FastAPI(title="ragpipe API")
 
 # Per-mode cache — building Azure clients is expensive so we reuse per mode.
-_pipeline_fns: dict[str, Callable[[str], Awaitable[PipelineState]]] = {}
+_pipeline_fns: dict[str, Callable[..., Awaitable[PipelineState]]] = {}
 
 
-def get_pipeline_fn_for_mode() -> Callable[[str], Awaitable[Callable[[str], Awaitable[PipelineState]]]]:
-    async def factory(mode: str) -> Callable[[str], Awaitable[PipelineState]]:
+def get_pipeline_fn_for_mode() -> Callable[[str], Awaitable[Callable[..., Awaitable[PipelineState]]]]:
+    async def factory(mode: str) -> Callable[..., Awaitable[PipelineState]]:
         if mode not in _pipeline_fns:
             from ragpipe.app_wiring import build_pipeline_fn
 
@@ -64,7 +64,7 @@ def health() -> dict[str, str]:
 @app.post("/run")
 async def run(
     req: RunRequest,
-    factory: Callable[[str], Awaitable[Callable[[str], Awaitable[PipelineState]]]] = Depends(
+    factory: Callable[[str], Awaitable[Callable[..., Awaitable[PipelineState]]]] = Depends(
         get_pipeline_fn_for_mode
     ),
 ) -> dict[str, Any]:
@@ -76,7 +76,7 @@ async def run(
 @app.post("/compare")
 async def compare(
     req: CompareRequest,
-    factory: Callable[[str], Awaitable[Callable[[str], Awaitable[PipelineState]]]] = Depends(
+    factory: Callable[[str], Awaitable[Callable[..., Awaitable[PipelineState]]]] = Depends(
         get_pipeline_fn_for_mode
     ),
 ) -> dict[str, Any]:
