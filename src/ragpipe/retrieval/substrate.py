@@ -4,6 +4,7 @@ from dataclasses import dataclass, field
 from typing import Protocol, runtime_checkable
 
 from ragpipe.models import Chunk
+from ragpipe.progress import ProgressSink
 from ragpipe.retrieval.rrf import reciprocal_rank_fusion
 
 
@@ -21,7 +22,7 @@ class RetrievalResult:
 class RetrievalSubstrate(Protocol):
     name: str
 
-    async def retrieve(self, query: str, k: int) -> RetrievalResult: ...
+    async def retrieve(self, query: str, k: int, on_event: ProgressSink | None = None) -> RetrievalResult: ...
 
 
 class HybridSubstrate:
@@ -35,7 +36,7 @@ class HybridSubstrate:
         self._bm25 = bm25
         self._rrf_k = rrf_k
 
-    async def retrieve(self, query: str, k: int) -> RetrievalResult:
+    async def retrieve(self, query: str, k: int, on_event: ProgressSink | None = None) -> RetrievalResult:
         dense = self._dense.retrieve(query)
         bm25 = self._bm25.retrieve(query)
         fused = reciprocal_rank_fusion(dense, bm25, k=self._rrf_k)

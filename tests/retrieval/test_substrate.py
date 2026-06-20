@@ -43,3 +43,16 @@ async def test_hybrid_substrate_fuses_and_records_stages():
     assert [c.id for c in result.stages["dense"]] == ["a"]
     assert {c.id for c in result.candidates} == {"a", "b"}  # fused union
     assert result.candidates is result.stages["fused"]
+
+
+@pytest.mark.asyncio
+async def test_hybrid_accepts_and_ignores_on_event():
+    dense = _FakeLeg([Chunk(id="a", title="", url="", content="x")])
+    bm25 = _FakeLeg([Chunk(id="b", title="", url="", content="y")])
+    sub = HybridSubstrate(name="baseline", dense=dense, bm25=bm25, rrf_k=60)
+
+    seen: list = []
+    result = await sub.retrieve("q", k=10, on_event=seen.append)
+
+    assert set(result.stages) == {"dense", "bm25", "fused"}
+    assert seen == []  # hybrid does not emit; it just accepts the contract kwarg

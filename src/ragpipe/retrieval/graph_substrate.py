@@ -127,7 +127,7 @@ class GraphRAGSubstrate:
         self._adjacency = adjacency
         self._rrf_k = rrf_k
 
-    async def retrieve(self, query: str, k: int) -> RetrievalResult:
+    async def retrieve(self, query: str, k: int, on_event=None) -> RetrievalResult:
         seeds = self._entities.search_entities(query, k)
         expanded: list[Chunk] = list(seeds)
         seen = {c.id for c in seeds}

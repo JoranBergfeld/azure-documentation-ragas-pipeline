@@ -14,7 +14,7 @@ class CombinedSubstrate:
         self._substrates = substrates
         self._rrf_k = rrf_k
 
-    async def retrieve(self, query: str, k: int) -> RetrievalResult:
+    async def retrieve(self, query: str, k: int, on_event=None) -> RetrievalResult:
         stages: dict = {}
         candidate_lists = []
         for sub in self._substrates:
