@@ -1,4 +1,5 @@
 import asyncio
+import contextvars
 
 import pytest
 
@@ -97,6 +98,44 @@ async def test_generator_retries_after_timeout_then_succeeds():
 
     assert answer == "recovered"
     assert agent.calls == 2
+
+
+class ContextVarAgent:
+    """Mimics agent-framework's ContextVar handling: eagerly ``.set()`` a
+    ContextVar at call time (in the caller's context), then ``.reset()`` the
+    token inside the returned coroutine's ``finally``. ``asyncio.wait_for``
+    runs the coroutine in a *copied* context, so the reset blows up with
+    "Token was created in a different Context" (issue #5). ``run`` is a plain
+    (non-async) method on purpose so the ``.set()`` happens eagerly, exactly
+    like agent-framework 1.7.0's ``agent.run()``.
+    """
+
+    _CV = contextvars.ContextVar("ctxvar_agent")
+
+    def __init__(self, text="grounded"):
+        self._text = text
+
+    def run(self, prompt):
+        token = self._CV.set(123)
+
+        async def _run():
+            try:
+                await asyncio.sleep(0)
+                return type("R", (), {"text": self._text})()
+            finally:
+                self._CV.reset(token)
+
+        return _run()
+
+
+@pytest.mark.asyncio
+async def test_generator_survives_eager_contextvar_set_reset():
+    agent = ContextVarAgent("grounded")
+    gen = Generator(agent, timeout=5.0, max_retries=0)
+
+    answer = await gen.generate("q", [_chunk("a", "Alpha.")])
+
+    assert answer == "grounded"
 
 
 @pytest.mark.asyncio

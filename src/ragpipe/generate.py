@@ -67,9 +67,15 @@ class Generator:
         last_exc: asyncio.TimeoutError | None = None
         for _ in range(self._max_retries + 1):
             try:
-                result = await asyncio.wait_for(
-                    self._agent.run(prompt), self._timeout
-                )
+                # Use asyncio.timeout (a context manager) rather than
+                # asyncio.wait_for. On Python 3.11 wait_for runs the awaited
+                # coroutine as a child Task in a *copied* context, which breaks
+                # agent-framework's eager ContextVar set/reset pair ("Token was
+                # created in a different Context"; issue #5). asyncio.timeout
+                # does not spawn a child Task, so set/reset stay balanced; the
+                # TimeoutError semantics are identical.
+                async with asyncio.timeout(self._timeout):
+                    result = await self._agent.run(prompt)
                 return result.text
             except asyncio.TimeoutError as exc:
                 last_exc = exc
