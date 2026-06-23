@@ -6,16 +6,10 @@ from statistics import mean
 from typing import Awaitable, Callable
 
 from ragpipe.eval.retrieval_metrics import stage_retrieval_metrics
+from ragpipe.eval.stats import bootstrap_ci_mean, paired_diff_test
 from ragpipe.eval.testset import TestItem
 from ragpipe.models import PipelineState
 
-
-# Default stage set for the optional per-stage context sweep. Substrates now name
-# their own stages dynamically (run_harness reads state.stages), so this tuple is
-# only the default for the hybrid contextual/baseline modes; later substrates
-# (RAPTOR levels, graph local/global) name different stages. The answer-level
-# metrics (faithfulness, relevancy) only exist after generation.
-RETRIEVAL_STAGES = ("dense", "bm25", "fused", "reranked")
 
 # Offline RAGAS judge budgets. The offline judge is a *reasoning* model
 # (DeepSeek, ADR-0009): a single faithfulness/context_precision job is several
@@ -81,6 +75,22 @@ def parse_stage_metric(key: str) -> tuple[str, str] | None:
     return metric, stage
 
 
+def stages_from_records(records: list[EvalRecord]) -> list[str]:
+    """The substrate's own stage names across the records, in first-seen order.
+
+    Dynamic stage reading (ADR-0016): the per-stage sweep scores whatever stages
+    the active substrate produced — dense/bm25/fused (hybrid), local/global/fused
+    (graph), iter_0..iter_N (agentic), always ending in the well-known `reranked`
+    — instead of a hardcoded hybrid tuple. Records share the same stage set, so
+    first-seen insertion order mirrors the pipeline order of `state.stages`.
+    """
+    ordered: dict[str, None] = {}
+    for record in records:
+        for stage in record.stage_contexts:
+            ordered.setdefault(stage, None)
+    return list(ordered)
+
+
 async def run_harness(
     items: list[TestItem],
     pipeline_fn: PipelineFn,
@@ -131,6 +141,25 @@ def aggregate(records: list[EvalRecord]) -> dict[str, float]:
     return means
 
 
+def aggregate_with_ci(
+    records: list[EvalRecord],
+    *,
+    confidence: float = 0.95,
+    n_resamples: int = 10000,
+    seed: int = 12345,
+) -> dict[str, dict]:
+    """Mean and percentile bootstrap CI of each metric across finite item scores."""
+    keys = {k for r in records for k in r.metrics}
+    intervals: dict[str, dict] = {}
+    for k in keys:
+        valid = [r.metrics[k] for r in records if _is_valid(r.metrics.get(k))]
+        if valid:
+            intervals[k] = bootstrap_ci_mean(
+                valid, confidence=confidence, n_resamples=n_resamples, seed=seed
+            )
+    return intervals
+
+
 def aggregate_by_tag(records: list[EvalRecord]) -> dict[str, dict[str, float]]:
     """aggregate() per tag group; records without tags count as 'original'.
 
@@ -146,6 +175,51 @@ def aggregate_by_tag(records: list[EvalRecord]) -> dict[str, dict[str, float]]:
 def aggregate_by_mode(records_by_mode: dict[str, list[EvalRecord]]) -> dict[str, dict[str, float]]:
     """aggregate() per mode. Keys are mode names; values are the per-mode means."""
     return {mode: aggregate(recs) for mode, recs in records_by_mode.items()}
+
+
+def compare_modes(
+    records_by_mode: dict[str, list[EvalRecord]],
+    baseline: str,
+    *,
+    confidence: float = 0.95,
+    n_resamples: int = 10000,
+    seed: int = 12345,
+) -> dict[str, dict[str, dict]]:
+    """Paired bootstrap diffs for each mode and metric against ``baseline``."""
+    if baseline not in records_by_mode:
+        return {}
+
+    baseline_records = records_by_mode[baseline]
+    baseline_metrics = {k for r in baseline_records for k in r.metrics}
+    comparisons: dict[str, dict[str, dict]] = {}
+    for mode, records in records_by_mode.items():
+        if mode == baseline:
+            continue
+        treatment_metrics = {k for r in records for k in r.metrics}
+        metric_results: dict[str, dict] = {}
+        for metric in sorted(treatment_metrics & baseline_metrics):
+            length = max(len(records), len(baseline_records))
+            treatment_scores = [
+                records[i].metrics.get(metric, float("nan")) if i < len(records) else float("nan")
+                for i in range(length)
+            ]
+            baseline_scores = [
+                baseline_records[i].metrics.get(metric, float("nan"))
+                if i < len(baseline_records)
+                else float("nan")
+                for i in range(length)
+            ]
+            result = paired_diff_test(
+                treatment_scores,
+                baseline_scores,
+                confidence=confidence,
+                n_resamples=n_resamples,
+                seed=seed,
+            )
+            if result["n"] > 0:
+                metric_results[metric] = result
+        comparisons[mode] = metric_results
+    return comparisons
 
 
 def coverage(records: list[EvalRecord]) -> dict[str, tuple[int, int]]:
@@ -297,12 +371,15 @@ def build_ragas_evaluator(settings):  # pragma: no cover
     return evaluator_fn
 
 
-def build_per_stage_context_evaluator(settings, stages=RETRIEVAL_STAGES):  # pragma: no cover
+def build_per_stage_context_evaluator(settings, stages=None):  # pragma: no cover
     """Return an evaluator_fn that scores context_precision/recall at each retrieval stage.
 
     Runs the two context metrics once per stage over that stage's captured context
     set, writing keys like 'context_precision@dense'. This is the expensive sweep
     (one judge pass per stage) — gate it behind the PER_STAGE_METRICS toggle.
+
+    Stages default to whatever the active substrate named (`stages_from_records`,
+    ADR-0016); pass an explicit tuple to override.
     """
     async def evaluator_fn(records: list[EvalRecord]) -> list[EvalRecord]:
         from ragpipe.guardrail import _ensure_ragas_importable
@@ -315,7 +392,8 @@ def build_per_stage_context_evaluator(settings, stages=RETRIEVAL_STAGES):  # pra
 
         llm, emb = _build_ragas_clients(settings)
         run_config = _ragas_run_config()
-        for stage in stages:
+        eval_stages = stages if stages is not None else stages_from_records(records)
+        for stage in eval_stages:
             ds = Dataset.from_list(
                 [
                     {

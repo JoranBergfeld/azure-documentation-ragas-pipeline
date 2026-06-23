@@ -206,3 +206,111 @@ def test_progress_step_view_falls_back_to_phase_when_no_message():
 
     ev = ProgressEvent(phase="retrieve.fuse", status="complete")
     assert progress_step_view(ev) == ("✅", "retrieve.fuse")
+
+
+def test_eval_rows_include_confidence_interval_when_present():
+    results = {
+        "means": {"faithfulness": 0.75},
+        "means_ci": {"faithfulness": {"mean": 0.75, "lo": 0.5, "hi": 0.9, "n": 4}},
+    }
+
+    assert eval_rows(results) == [
+        {"metric": "faithfulness", "mean_score": 0.75, "95% CI": "[0.5000, 0.9000]", "n": 4}
+    ]
+
+
+def test_significance_rows_classify_diff_ci_verdicts():
+    from app.dashboard import significance_rows
+
+    rows = significance_rows(
+        {
+            "contextual": {
+                "mrr@reranked": {
+                    "mean_diff": 0.2,
+                    "lo": 0.05,
+                    "hi": 0.3,
+                    "p_value": 0.02,
+                    "n": 3,
+                },
+                "faithfulness": {
+                    "mean_diff": -0.1,
+                    "lo": -0.2,
+                    "hi": 0.1,
+                    "p_value": 0.5,
+                    "n": 3,
+                },
+            },
+            "graphrag": {
+                "hit_rate@reranked": {
+                    "mean_diff": -0.3,
+                    "lo": -0.5,
+                    "hi": -0.1,
+                    "p_value": 0.01,
+                    "n": 3,
+                }
+            },
+        }
+    )
+
+    assert rows == [
+        {
+            "mode": "contextual",
+            "metric": "faithfulness",
+            "mean_diff": -0.1,
+            "95% CI [lo, hi]": "[-0.2000, 0.1000]",
+            "p_value": 0.5,
+            "verdict": "no measurable difference",
+        },
+        {
+            "mode": "contextual",
+            "metric": "mrr@reranked",
+            "mean_diff": 0.2,
+            "95% CI [lo, hi]": "[0.0500, 0.3000]",
+            "p_value": 0.02,
+            "verdict": "better",
+        },
+        {
+            "mode": "graphrag",
+            "metric": "hit_rate@reranked",
+            "mean_diff": -0.3,
+            "95% CI [lo, hi]": "[-0.5000, -0.1000]",
+            "p_value": 0.01,
+            "verdict": "worse",
+        },
+    ]
+
+
+def test_significance_rows_handles_cleaned_null_p_value():
+    from app.dashboard import significance_rows
+
+    rows = significance_rows(
+        {
+            "contextual": {
+                "faithfulness": {
+                    "mean_diff": 0.8,
+                    "lo": 0.8,
+                    "hi": 0.8,
+                    "p_value": None,
+                    "n": 1,
+                }
+            }
+        }
+    )
+
+    assert rows[0]["p_value"] is None
+    assert rows[0]["verdict"] == "no measurable difference"
+
+
+def test_significance_rows_keeps_abstained_verdict_neutral_when_measurable():
+    from app.dashboard import significance_rows
+
+    rows = significance_rows(
+        {
+            "contextual": {
+                "abstained": {"mean_diff": 0.4, "lo": 0.1, "hi": 0.7, "p_value": 0.03, "n": 5}
+            }
+        }
+    )
+
+    assert rows[0]["metric"] == "abstained"
+    assert rows[0]["verdict"] == "differs (abstention rate)"

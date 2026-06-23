@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import math
 from pathlib import Path
 from typing import Any
 
@@ -132,15 +133,76 @@ def eval_rows(results: dict[str, Any]) -> list[dict[str, Any]]:
     is over fewer items than the full set, e.g. when RAGAS returned NaN for an item.
     """
     means = results.get("means", {})
+    means_ci = results.get("means_ci", {})
     cov = results.get("coverage", {})
     rows: list[dict[str, Any]] = []
     for k, v in sorted(means.items()):
         if "@" in k:  # per-stage metric, handled elsewhere
             continue
         row = {"metric": k, "mean_score": round(v, 4)}
+        if k in means_ci:
+            ci = means_ci[k]
+            row["95% CI"] = f"[{ci['lo']:.4f}, {ci['hi']:.4f}]"
+            row["n"] = ci["n"]
         if k in cov:
             row["coverage"] = f"{cov[k]['valid']}/{cov[k]['total']}"
         rows.append(row)
+    return rows
+
+
+def significance_rows(comparisons: dict[str, dict[str, dict]]) -> list[dict[str, Any]]:
+    """Flatten paired mode comparisons for the Evaluation tab."""
+    rows: list[dict[str, Any]] = []
+    for mode, metrics in comparisons.items():
+        for metric, stats in sorted(metrics.items()):
+            diff = stats.get("mean_diff")
+            lo = stats.get("lo")
+            hi = stats.get("hi")
+            p_value = stats.get("p_value")
+            n = stats.get("n")
+            measurable = (
+                isinstance(n, int)
+                and n >= 2
+                and isinstance(p_value, (int, float))
+                and math.isfinite(p_value)
+                and isinstance(lo, (int, float))
+                and math.isfinite(lo)
+                and isinstance(hi, (int, float))
+                and math.isfinite(hi)
+                and isinstance(diff, (int, float))
+                and math.isfinite(diff)
+                and not (lo <= 0 <= hi)
+            )
+            if not measurable:
+                verdict = "no measurable difference"
+            elif metric == "abstained":
+                verdict = "differs (abstention rate)"
+            else:
+                verdict = "better" if diff > 0 else "worse"
+            ci = (
+                f"[{lo:.4f}, {hi:.4f}]"
+                if (
+                    isinstance(lo, (int, float))
+                    and math.isfinite(lo)
+                    and isinstance(hi, (int, float))
+                    and math.isfinite(hi)
+                )
+                else f"[{lo}, {hi}]"
+            )
+            rows.append(
+                {
+                    "mode": mode,
+                    "metric": metric,
+                    "mean_diff": round(diff, 4)
+                    if isinstance(diff, (int, float)) and math.isfinite(diff)
+                    else diff,
+                    "95% CI [lo, hi]": ci,
+                    "p_value": round(p_value, 4)
+                    if isinstance(p_value, (int, float)) and math.isfinite(p_value)
+                    else p_value,
+                    "verdict": verdict,
+                }
+            )
     return rows
 
 
@@ -287,6 +349,15 @@ def main() -> None:  # pragma: no cover - UI entry point
                     for metric in metric_names
                 }
                 st.bar_chart(pd.DataFrame(chart, index=list(means_by_mode.keys())))
+                if "comparisons" in results:
+                    sig_rows = significance_rows(results["comparisons"])
+                    if sig_rows:
+                        st.subheader("Significance vs baseline")
+                        st.caption(
+                            "Paired bootstrap differences vs baseline. When the difference CI "
+                            "overlaps zero, treat it as no measurable difference."
+                        )
+                        st.table(sig_rows)
                 mode_results = results.get("modes", {})
                 if mode_results:
                     selected = st.selectbox("Drill into mode", list(mode_results.keys()))

@@ -31,7 +31,9 @@ meaningful. They should be shared.
    and `mrr@stage` (ADR-0002) are exact, reproducible, and LLM-free. They are the
    numbers we lead with when comparing modes. RAGAS metrics (faithfulness,
    answer_relevancy, context precision/recall) stay as a complement, per mode, for
-   the richer picture.
+   the richer picture. ADR-0018 amends this signal with bootstrap confidence
+   intervals and paired significance tests vs. baseline; overlapping intervals mean
+   no measurable difference on the current test set.
 
 3. **Dynamic stage reading.** `RETRIEVAL_STAGES` stops being a fixed tuple. The harness
    reads stage names from each record's `state.stages` keys (ADR-0012). Each mode's

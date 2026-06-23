@@ -10,10 +10,13 @@ import os
 from ragpipe.app_wiring import build_pipeline_fn
 from ragpipe.config import RetrievalMode, Settings, TestsetMode
 from ragpipe.eval.harness import (
+    EvalRecord,
     aggregate,
     aggregate_by_tag,
+    aggregate_with_ci,
     build_per_stage_context_evaluator,
     build_ragas_evaluator,
+    compare_modes,
     coverage,
     run_harness,
 )
@@ -43,6 +46,72 @@ def build_per_mode_payload(mode: str, mode_result: dict) -> dict:
     eval_results.json `modes` map plus a top-level `mode` key. Does not mutate
     the input."""
     return {"mode": mode, **mode_result}
+
+
+def _record_from_dict(record: dict) -> EvalRecord:
+    return EvalRecord(
+        question=record.get("question", ""),
+        answer=record.get("answer", ""),
+        contexts=list(record.get("contexts", [])),
+        ground_truth=record.get("ground_truth", ""),
+        metrics=dict(record.get("metrics", {})),
+        stage_contexts=dict(record.get("stage_contexts", {})),
+        stage_urls=dict(record.get("stage_urls", {})),
+        tags=tuple(record.get("tags", ())),
+        abstained=bool(record.get("abstained", False)),
+    )
+
+
+def records_by_mode_from_results(results_by_mode: dict[str, dict]) -> dict[str, list[EvalRecord]]:
+    """Rebuild EvalRecord lists from live results or cached per-mode JSON dicts."""
+    return {
+        mode: [record if isinstance(record, EvalRecord) else _record_from_dict(record)
+               for record in result.get("records", [])]
+        for mode, result in results_by_mode.items()
+    }
+
+
+def significance_summary_lines(comparisons: dict[str, dict[str, dict]]) -> list[str]:
+    """Human-readable summary of paired CIs that exclude or overlap zero."""
+    if not comparisons:
+        return []
+    lines = ["Significance vs baseline:"]
+    for mode, metrics in comparisons.items():
+        measurable: list[str] = []
+        not_measurable: list[str] = []
+        for metric, stats in sorted(metrics.items()):
+            lo = stats.get("lo")
+            hi = stats.get("hi")
+            diff = stats.get("mean_diff")
+            p_value = stats.get("p_value")
+            n = stats.get("n")
+            measurable_diff = (
+                isinstance(n, int)
+                and n >= 2
+                and isinstance(p_value, (int, float))
+                and math.isfinite(p_value)
+                and isinstance(lo, (int, float))
+                and math.isfinite(lo)
+                and isinstance(hi, (int, float))
+                and math.isfinite(hi)
+                and isinstance(diff, (int, float))
+                and math.isfinite(diff)
+                and not (lo <= 0 <= hi)
+            )
+            if not measurable_diff:
+                not_measurable.append(metric)
+                continue
+            sign = "differs (abstention rate)" if metric == "abstained" else (
+                "better" if diff > 0 else "worse"
+            )
+            measurable.append(f"{metric} {sign} ({diff:+.4f})")
+        parts = []
+        if measurable:
+            parts.append(f"measurable differences: {', '.join(measurable)}")
+        if not_measurable:
+            parts.append(f"no measurable difference: {', '.join(not_measurable)}")
+        lines.append(f"- {mode}: {'; '.join(parts) if parts else 'no metrics compared'}")
+    return lines
 
 
 def _sample_corpus_docs(settings, limit: int = 40) -> list[dict]:  # pragma: no cover - live Azure
@@ -91,7 +160,19 @@ def main() -> None:  # pragma: no cover
         if os.path.exists(filename):
             with open(filename) as f:
                 cached = json.load(f)
-            results_by_mode[mode_value] = {k: v for k, v in cached.items() if k != "mode"}
+            mode_result = {k: v for k, v in cached.items() if k != "mode"}
+            if "means_ci" not in mode_result:
+                mode_result["means_ci"] = aggregate_with_ci(
+                    records_by_mode_from_results({mode_value: mode_result})[mode_value]
+                )
+                with open(filename, "w") as f:
+                    json.dump(
+                        build_per_mode_payload(mode_value, _clean(mode_result)),
+                        f,
+                        indent=2,
+                        allow_nan=False,
+                    )
+            results_by_mode[mode_value] = _clean(mode_result)
             print(f"=== mode: {mode_value} === (cached: {filename})", flush=True)
             continue
 
@@ -102,6 +183,7 @@ def main() -> None:  # pragma: no cover
             records = asyncio.run(build_per_stage_context_evaluator(settings)(records))
         mode_result = _clean({
             "means": aggregate(records),
+            "means_ci": aggregate_with_ci(records),
             "means_by_tag": aggregate_by_tag(records),
             "coverage": {k: {"valid": v, "total": t} for k, (v, t) in coverage(records).items()},
             "records": [r.__dict__ for r in records],
@@ -118,10 +200,14 @@ def main() -> None:  # pragma: no cover
     # each mode's `means` (aggregate_by_mode), so it rebuilds from the per-mode
     # aggregates without keeping every mode's records in memory.
     means_by_mode = {m: r["means"] for m, r in results_by_mode.items()}
-    payload = {"means_by_mode": means_by_mode, "modes": results_by_mode}
+    records_by_mode = records_by_mode_from_results(results_by_mode)
+    comparisons = _clean(compare_modes(records_by_mode, RetrievalMode.BASELINE.value))
+    payload = {"means_by_mode": means_by_mode, "comparisons": comparisons, "modes": results_by_mode}
     with open("eval_results.json", "w") as f:
         json.dump(payload, f, indent=2, allow_nan=False)
 
+    for line in significance_summary_lines(comparisons):
+        print(line)
     print(json.dumps({"means_by_mode": means_by_mode}, indent=2))
 
 

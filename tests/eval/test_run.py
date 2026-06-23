@@ -47,3 +47,90 @@ def test_per_mode_file_round_trips_back_to_modes_map_entry(tmp_path):
     assert reconstructed == mode_result
     # means_by_mode in the combined file is exactly each mode's means.
     assert reconstructed["means"] == mode_result["means"]
+
+
+def test_records_by_mode_from_results_rebuilds_eval_records_for_cached_dicts():
+    from ragpipe.eval.run import records_by_mode_from_results
+
+    records = records_by_mode_from_results(
+        {
+            "baseline": {"records": [{"question": "q", "metrics": {"m": 0.1}}]},
+            "contextual": {"records": [{"question": "q", "metrics": {"m": 0.3}}]},
+        }
+    )
+
+    assert records["baseline"][0].metrics == {"m": 0.1}
+    assert records["contextual"][0].metrics == {"m": 0.3}
+
+
+def test_significance_summary_groups_measurable_and_non_measurable_diffs():
+    from ragpipe.eval.run import significance_summary_lines
+
+    lines = significance_summary_lines(
+        {
+            "contextual": {
+                "mrr@reranked": {"mean_diff": 0.2, "lo": 0.1, "hi": 0.3, "p_value": 0.02, "n": 3},
+                "faithfulness": {
+                    "mean_diff": 0.01,
+                    "lo": -0.2,
+                    "hi": 0.2,
+                    "p_value": 0.8,
+                    "n": 3,
+                },
+            }
+        }
+    )
+
+    assert lines == [
+        "Significance vs baseline:",
+        "- contextual: measurable differences: mrr@reranked better (+0.2000); "
+        "no measurable difference: faithfulness",
+    ]
+
+
+def test_significance_summary_requires_multiple_finite_pairs_for_measurable_diff():
+    from ragpipe.eval.run import significance_summary_lines
+
+    lines = significance_summary_lines(
+        {
+            "contextual": {
+                "faithfulness": {
+                    "mean_diff": 0.8,
+                    "lo": 0.8,
+                    "hi": 0.8,
+                    "p_value": None,
+                    "n": 1,
+                }
+            }
+        }
+    )
+
+    assert lines == [
+        "Significance vs baseline:",
+        "- contextual: no measurable difference: faithfulness",
+    ]
+
+
+def test_significance_summary_keeps_abstained_measurable_diff_neutral():
+    from ragpipe.eval.run import significance_summary_lines
+
+    lines = significance_summary_lines(
+        {
+            "contextual": {
+                "abstained": {"mean_diff": 0.4, "lo": 0.1, "hi": 0.7, "p_value": 0.03, "n": 5},
+                "faithfulness": {
+                    "mean_diff": -0.2,
+                    "lo": -0.3,
+                    "hi": -0.1,
+                    "p_value": 0.01,
+                    "n": 5,
+                },
+            }
+        }
+    )
+
+    assert lines == [
+        "Significance vs baseline:",
+        "- contextual: measurable differences: abstained differs (abstention rate) (+0.4000), "
+        "faithfulness worse (-0.2000)",
+    ]
