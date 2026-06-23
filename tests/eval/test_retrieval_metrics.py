@@ -42,3 +42,62 @@ def test_stage_retrieval_metrics_keys_and_normalization():
         "hit_rate@bm25": 0.0,
         "mrr@bm25": 0.0,
     }
+
+
+def test_stage_retrieval_metrics_omits_all_empty_url_stage():
+    got = stage_retrieval_metrics({"global": ["", ""]}, "https://learn.microsoft.com/azure/x")
+    assert "hit_rate@global" not in got
+    assert "mrr@global" not in got
+
+
+def test_stage_retrieval_metrics_scores_mixed_empty_and_matching_urls():
+    got = stage_retrieval_metrics(
+        {"global": ["", "https://learn.microsoft.com/en-us/azure/foo"]},
+        "https://learn.microsoft.com/azure/foo",
+    )
+    assert got == {
+        "hit_rate@global": 1.0,
+        "mrr@global": 0.5,
+    }
+
+
+def test_stage_retrieval_metrics_preserves_real_miss_for_non_empty_urls():
+    got = stage_retrieval_metrics(
+        {"global": ["https://learn.microsoft.com/azure/foo"]},
+        "https://learn.microsoft.com/azure/bar",
+    )
+    assert got == {
+        "hit_rate@global": 0.0,
+        "mrr@global": 0.0,
+    }
+
+
+def test_stage_retrieval_metrics_preserves_hit_for_non_empty_urls():
+    got = stage_retrieval_metrics(
+        {"global": ["https://learn.microsoft.com/azure/foo"]},
+        "https://learn.microsoft.com/azure/foo",
+    )
+    assert got == {
+        "hit_rate@global": 1.0,
+        "mrr@global": 1.0,
+    }
+
+
+def test_stage_retrieval_metrics_omits_empty_stage():
+    got = stage_retrieval_metrics({"global": []}, "https://learn.microsoft.com/azure/x")
+    assert "hit_rate@global" not in got
+    assert "mrr@global" not in got
+
+
+def test_stage_retrieval_metrics_mixes_url_less_and_normal_stages():
+    got = stage_retrieval_metrics(
+        {
+            "global": ["", ""],
+            "local": ["https://learn.microsoft.com/en-us/azure/foo"],
+        },
+        "https://learn.microsoft.com/azure/foo",
+    )
+    assert got == {
+        "hit_rate@local": 1.0,
+        "mrr@local": 1.0,
+    }

@@ -52,6 +52,8 @@ def stage_retrieval_metrics(
     out: dict[str, float] = {}
     for stage, urls in stage_urls.items():
         normalized = [normalize_url(u) for u in urls]
+        if not any(normalized):
+            continue
         out[f"hit_rate@{stage}"] = hit_rate(normalized, gt)
         out[f"mrr@{stage}"] = mrr(normalized, gt)
     return out
