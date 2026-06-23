@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Callable
 
 from ragpipe.config import TestsetMode
 
@@ -11,10 +11,24 @@ from ragpipe.config import TestsetMode
 class TestItem:
     question: str
     ground_truth: str
-    ground_truth_context: str
+    ground_truth_context: str = ""
     # Optional difficulty/category tags (ADR-0006): 'original', 'paraphrase',
     # 'lookalike', 'synthetic'. Empty means 'original'.
     tags: tuple[str, ...] = ()
+    ground_truth_urls: tuple[str, ...] = ()
+
+    def gold_urls(self) -> tuple[str, ...]:
+        """Gold source URLs for URL-match metrics.
+
+        Multi-URL gold (multi-hop) takes precedence; else the single
+        ground_truth_context; else empty (global/sensemaking items judged only
+        by graded RAGAS metrics).
+        """
+        if self.ground_truth_urls:
+            return self.ground_truth_urls
+        if self.ground_truth_context:
+            return (self.ground_truth_context,)
+        return ()
 
 
 def _load_jsonl(path: str) -> list[TestItem]:
@@ -29,8 +43,9 @@ def _load_jsonl(path: str) -> list[TestItem]:
                 TestItem(
                     question=row["question"],
                     ground_truth=row["ground_truth"],
-                    ground_truth_context=row["ground_truth_context"],
+                    ground_truth_context=row.get("ground_truth_context", ""),
                     tags=tuple(row.get("tags", ())),
+                    ground_truth_urls=tuple(row.get("ground_truth_urls", ())),
                 )
             )
     return items

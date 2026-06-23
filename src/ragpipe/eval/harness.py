@@ -111,9 +111,9 @@ async def run_harness(
         )
         # Deterministic metrics are free — always computed, no toggle.
         record.metrics["abstained"] = float(state.abstained)
-        record.metrics.update(
-            stage_retrieval_metrics(record.stage_urls, item.ground_truth_context)
-        )
+        gold = item.gold_urls()
+        if gold:
+            record.metrics.update(stage_retrieval_metrics(record.stage_urls, list(gold)))
         records.append(record)
     return await evaluator_fn(records)
 

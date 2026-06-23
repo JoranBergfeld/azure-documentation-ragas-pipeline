@@ -57,6 +57,44 @@ def test_testitem_tags_default_empty():
     assert item.tags == ()
 
 
+def test_gold_urls_prefers_multi_url_gold_then_single_context_then_empty():
+    multi = TestItem(
+        question="q",
+        ground_truth="g",
+        ground_truth_context="http://single",
+        ground_truth_urls=("http://a", "http://b"),
+    )
+    single = TestItem(question="q", ground_truth="g", ground_truth_context="http://single")
+    global_item = TestItem(question="q", ground_truth="g")
+
+    assert multi.gold_urls() == ("http://a", "http://b")
+    assert single.gold_urls() == ("http://single",)
+    assert global_item.gold_urls() == ()
+
+
+def test_load_testset_parses_multi_url_gold_and_missing_gold(tmp_path):
+    p = tmp_path / "ts.jsonl"
+    rows = [
+        {
+            "question": "q1",
+            "ground_truth": "a1",
+            "ground_truth_urls": ["http://u1", "http://u2"],
+            "tags": ["multihop"],
+        },
+        {"question": "q2", "ground_truth": "a2", "tags": ["global"]},
+    ]
+    p.write_text("\n".join(json.dumps(r) for r in rows))
+
+    items = load_testset(TestsetMode.HANDAUTHORED, handauthored_path=str(p))
+
+    assert items[0].ground_truth_context == ""
+    assert items[0].ground_truth_urls == ("http://u1", "http://u2")
+    assert items[0].gold_urls() == ("http://u1", "http://u2")
+    assert items[1].ground_truth_context == ""
+    assert items[1].ground_truth_urls == ()
+    assert items[1].gold_urls() == ()
+
+
 def _corpus_urls() -> set[str]:
     with open("data/corpus_sources.yaml") as f:
         return {normalize_url(u) for u in yaml.safe_load(f)["sources"]}
@@ -68,12 +106,29 @@ def test_every_testset_url_is_in_the_corpus():
     items = _load_jsonl("data/testset.jsonl")
     missing = sorted(
         {
-            it.ground_truth_context
+            url
             for it in items
-            if normalize_url(it.ground_truth_context) not in corpus
+            for url in it.gold_urls()
+            if normalize_url(url) not in corpus
         }
     )
     assert not missing, f"testset gold URLs not in data/corpus_sources.yaml: {missing}"
+
+
+def test_handauthored_testset_loads_legacy_multihop_and_global_gold_shapes():
+    items = load_testset(TestsetMode.HANDAUTHORED)
+
+    global_items = [item for item in items if "global" in item.tags]
+    multihop_items = [item for item in items if "multihop" in item.tags]
+    legacy_items = [
+        item for item in items if "global" not in item.tags and "multihop" not in item.tags
+    ]
+
+    assert len(items) == 44
+    assert all(item.gold_urls() == () for item in global_items)
+    assert all(len(item.gold_urls()) >= 2 for item in multihop_items)
+    assert len(legacy_items) == 33
+    assert all(len(item.gold_urls()) == 1 for item in legacy_items)
 
 
 def test_testset_has_hard_subsets():

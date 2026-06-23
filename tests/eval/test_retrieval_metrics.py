@@ -24,10 +24,20 @@ def test_hit_rate_one_when_url_present():
     assert hit_rate([], "http://b") == 0.0
 
 
+def test_hit_rate_uses_any_match_for_multiple_gold_urls():
+    assert hit_rate(["http://a", "http://b"], {"http://b", "http://c"}) == 1.0
+    assert hit_rate(["http://a"], ["http://b", "http://c"]) == 0.0
+
+
 def test_mrr_is_reciprocal_rank_of_first_match():
     assert mrr(["http://a", "http://b", "http://b"], "http://b") == 0.5
     assert mrr(["http://b"], "http://b") == 1.0
     assert mrr(["http://a"], "http://b") == 0.0
+
+
+def test_mrr_uses_first_matching_rank_for_multiple_gold_urls():
+    assert mrr(["http://a", "http://b", "http://c"], {"http://c", "http://b"}) == 0.5
+    assert mrr(["http://a", "http://d"], ["http://b", "http://c"]) == 0.0
 
 
 def test_stage_retrieval_metrics_keys_and_normalization():
@@ -42,3 +52,30 @@ def test_stage_retrieval_metrics_keys_and_normalization():
         "hit_rate@bm25": 0.0,
         "mrr@bm25": 0.0,
     }
+
+
+def test_stage_retrieval_metrics_uses_any_match_for_multiple_gold_urls():
+    stage_urls = {
+        "dense": ["https://learn.microsoft.com/en-us/azure/y"],
+        "bm25": ["https://learn.microsoft.com/azure/z"],
+    }
+    got = stage_retrieval_metrics(
+        stage_urls,
+        [
+            "https://learn.microsoft.com/azure/x",
+            "https://learn.microsoft.com/azure/y",
+        ],
+    )
+    assert got == {
+        "hit_rate@dense": 1.0,
+        "mrr@dense": 1.0,
+        "hit_rate@bm25": 0.0,
+        "mrr@bm25": 0.0,
+    }
+
+
+def test_stage_retrieval_metrics_omits_url_match_metrics_for_empty_gold():
+    stage_urls = {"dense": ["https://learn.microsoft.com/azure/x"]}
+
+    assert stage_retrieval_metrics(stage_urls, []) == {}
+    assert stage_retrieval_metrics(stage_urls, "") == {}

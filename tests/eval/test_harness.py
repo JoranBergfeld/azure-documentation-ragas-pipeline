@@ -129,6 +129,30 @@ async def test_run_harness_reads_dynamic_stages():
     assert "reranked" in recs[0].stage_urls
 
 
+@pytest.mark.asyncio
+async def test_run_harness_skips_url_match_metrics_for_global_items_without_gold():
+    async def pipeline_fn(q):
+        s = PipelineState(query=q)
+        s.answer = "a"
+        s.set_reranked([Chunk(id=q, title="", url="http://x", content="c")])
+        return s
+
+    async def evaluator_fn(records):
+        return records
+
+    items = [
+        TestItem(question="global", ground_truth="g", tags=("global",)),
+        TestItem(question="normal", ground_truth="g", ground_truth_context="http://x"),
+    ]
+    recs = await run_harness(items, pipeline_fn, evaluator_fn)
+
+    global_metrics = recs[0].metrics
+    normal_metrics = recs[1].metrics
+    assert not any(k.startswith(("hit_rate@", "mrr@")) for k in global_metrics)
+    assert normal_metrics["hit_rate@reranked"] == 1.0
+    assert normal_metrics["mrr@reranked"] == 1.0
+
+
 def test_aggregate_by_mode():
     a = EvalRecord(question="q", answer="a", contexts=[], ground_truth="g")
     a.metrics["hit_rate@reranked"] = 1.0
