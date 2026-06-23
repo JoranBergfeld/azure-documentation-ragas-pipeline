@@ -1,11 +1,15 @@
+from __future__ import annotations
+
 from pathlib import Path
 
+from ragpipe.config import RetrievalMode
 from ragpipe.models import Chunk, PipelineState
 from app.dashboard import (
     available_architecture_diagrams,
     chunk_label,
     eval_rows,
     is_agentic_mode,
+    mode_label,
     per_stage_chart_data,
     progress_step_view,
     stage_chunk_tables,
@@ -109,6 +113,13 @@ def test_is_agentic_mode_detects_agentic_suffix():
     assert is_agentic_mode("combined_agentic") is True
     assert is_agentic_mode("contextual") is False
     assert is_agentic_mode("graphrag") is False
+
+
+def test_mode_label_marks_experimental_modes_only():
+    assert mode_label("baseline_agentic") == "baseline_agentic — experimental (unevaluated)"
+    assert mode_label(RetrievalMode.COMBINED_AGENTIC) == "combined_agentic — experimental (unevaluated)"
+    assert mode_label("contextual") == "contextual"
+    assert mode_label(RetrievalMode.BASELINE) == "baseline"
 
 
 def test_stage_expanded_opens_reranked_always_and_iter0_only_for_agentic():

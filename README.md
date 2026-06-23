@@ -14,7 +14,8 @@ breadcrumb + cached LLM situating context (SAC — visible to retrieval only, se
 **9 modes**: `contextual`, `baseline`, `raptor_sac` (RAPTOR collapsed-tree over SAC
 leaves, ADR-0013), `graphrag` (flat local+global graph, ADR-0014), `combined`
 (RAPTOR ⊕ GraphRAG, RRF-fused), and the four `*_agentic` wrappers (bounded
-plan→retrieve loop, ADR-0015) — then a shared tail: Azure semantic rerank → Foundry
+plan→retrieve loop, ADR-0015; experimental / unevaluated with no committed eval coverage,
+ADR-0021) — then a shared tail: Azure semantic rerank → Foundry
 generator agent, with a directive RAGAS faithfulness guardrail judged by Claude
 (ADR-0009) that widens the rerank window and regenerates on weak grounding, and
 abstains when retries exhaust; **③ Evaluation** replays every mode over a tagged test
@@ -83,11 +84,15 @@ uv run uvicorn app.api:app --host 0.0.0.0 --port 8000
 ```
 
 - `POST /run` `{"query": "...", "mode": "contextual"}` → answer, faithfulness, attempt,
-  lowConfidence, abstained, and per-stage chunk tables (`stages` is a dynamic map —
-  each substrate names its own stages; the final set is always mirrored under `reranked`).
+  lowConfidence, abstained, an `experimental` flag, and per-stage chunk tables (`stages`
+  is a dynamic map — each substrate names its own stages; the final set is always mirrored
+  under `reranked`).
   `mode` is **required**; an omitted or unknown mode returns 422. Valid modes: `contextual`,
   `baseline`, `raptor_sac`, `graphrag`, `combined`, and the agentic variants `baseline_agentic`,
-  `raptor_sac_agentic`, `graphrag_agentic`, `combined_agentic`.
+  `raptor_sac_agentic`, `graphrag_agentic`, `combined_agentic`. The four `*_agentic`
+  wrappers are experimental / unevaluated (no committed `eval_results_*_agentic.json`);
+  `GET /modes`, the run payload's `experimental` flag, and the dashboard label/warning
+  surface that status.
 - `POST /run/stream` — same body as `/run`; returns a `text/event-stream` (Server-Sent Events).
   Frames: `event: progress` (one per phase boundary — `retrieve`, `rerank`, `generate`,
   `faithfulness`, `decision`; agentic modes also emit `retrieve.plan` / `retrieve.iter` /
@@ -96,6 +101,7 @@ uv run uvicorn app.api:app --host 0.0.0.0 --port 8000
   web clients.
 - `POST /compare` `{"query": "...", "modes": ["contextual", "baseline"]}` → the same payload
   per mode under `results`.
+- `GET /modes` → registered retrieval modes and whether each is experimental / unevaluated.
 - `GET /eval` → RAGAS metrics from `eval_results.json` (`overall`, `perStage`, `nRecords`).
 - `GET /health` → `{"status":"ok"}`.
 
@@ -142,7 +148,8 @@ uv run python scripts/generate_synthetic_testset.py https://learn.microsoft.com/
 
 The committed per-mode `eval_results_<mode>.json` files render to a single comparison
 chart of the four core RAGAS metrics across the evaluated substrates (the `*_agentic`
-modes are retrieval wrappers with no standalone eval files, so they're not shown):
+modes are experimental / unevaluated retrieval wrappers with no committed standalone eval
+files, so they're not shown):
 
 ![RAGAS evaluation across retrieval modes](docs/eval-results.svg)
 

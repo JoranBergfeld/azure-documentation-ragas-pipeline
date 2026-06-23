@@ -59,6 +59,29 @@ def registered_modes() -> list[RetrievalMode]:
     return list(_REGISTRY)
 
 
+# The four *_agentic wrapper modes have no committed eval coverage (no
+# eval_results_*_agentic.json) and wrap a single-shot bounded planner fan-out
+# (ADR-0015), so they are surfaced as experimental / unevaluated (ADR-0021).
+_EXPERIMENTAL_MODES: frozenset[RetrievalMode] = frozenset(
+    {
+        RetrievalMode.BASELINE_AGENTIC,
+        RetrievalMode.RAPTOR_SAC_AGENTIC,
+        RetrievalMode.GRAPHRAG_AGENTIC,
+        RetrievalMode.COMBINED_AGENTIC,
+    }
+)
+
+
+def experimental_modes() -> list[RetrievalMode]:
+    """Registered modes with no committed eval coverage (ADR-0021)."""
+    return [m for m in _REGISTRY if m in _EXPERIMENTAL_MODES]
+
+
+def is_experimental(mode: RetrievalMode | str) -> bool:
+    """True for unevaluated/experimental modes (ADR-0021). Accepts a mode or its .value."""
+    return RetrievalMode(mode) in _EXPERIMENTAL_MODES
+
+
 def build_substrate(mode: RetrievalMode, settings: Settings, ctx: SubstrateCtx) -> RetrievalSubstrate:
     if mode not in _REGISTRY:
         raise ValueError(f"mode {mode.value!r} is not registered yet (phase not built)")

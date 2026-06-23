@@ -17,6 +17,7 @@ from app.dashboard import (
 )
 from ragpipe.config import RetrievalMode, Settings
 from ragpipe.models import PipelineState
+from ragpipe.retrieval.registry import is_experimental, registered_modes
 from ragpipe.streaming import pipeline_event_stream
 
 app = FastAPI(title="ragpipe API")
@@ -65,6 +66,7 @@ def _json_safe(value: Any) -> Any:
 def _state_payload(mode: str, state: PipelineState) -> dict[str, Any]:
     return {
         "mode": mode,
+        "experimental": is_experimental(mode),
         "query": state.query,
         "answer": state.answer,
         "faithfulness": _json_safe(state.faithfulness),
@@ -82,6 +84,16 @@ def _sse(event: str, data: dict) -> str:
 @app.get("/health")
 def health() -> dict[str, str]:
     return {"status": "ok"}
+
+
+@app.get("/modes")
+def modes() -> dict[str, Any]:
+    """List registered retrieval modes with their experimental (unevaluated) flag."""
+    return {
+        "modes": [
+            {"mode": m.value, "experimental": is_experimental(m)} for m in registered_modes()
+        ]
+    }
 
 
 @app.post("/run")
