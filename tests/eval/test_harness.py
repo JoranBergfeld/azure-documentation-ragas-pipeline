@@ -184,3 +184,59 @@ def test_ragas_run_config_overrides_starving_defaults():
     # Strictly more generous than the defaults that starved the reasoning judge.
     assert rc.timeout > 180
     assert rc.max_workers < 16
+
+
+def test_aggregate_with_ci_reports_ci_shape_and_omits_all_nan_metrics():
+    from ragpipe.eval.harness import aggregate_with_ci
+
+    records = [
+        EvalRecord(question="q1", answer="a", contexts=[], ground_truth="g",
+                   metrics={"faithfulness": 0.8, "empty": float("nan")}),
+        EvalRecord(question="q2", answer="a", contexts=[], ground_truth="g",
+                   metrics={"faithfulness": 0.4, "empty": float("nan")}),
+    ]
+
+    result = aggregate_with_ci(records, n_resamples=200, seed=3)
+
+    assert set(result) == {"faithfulness"}
+    assert set(result["faithfulness"]) == {"mean", "lo", "hi", "n"}
+    assert result["faithfulness"]["mean"] == pytest.approx(0.6)
+    assert result["faithfulness"]["n"] == 2
+
+
+def test_compare_modes_pairs_by_index_and_returns_metric_diffs():
+    from ragpipe.eval.harness import compare_modes
+
+    baseline = [
+        EvalRecord(question="q1", answer="a", contexts=[], ground_truth="g",
+                   metrics={"hit_rate@reranked": 0.0, "faithfulness": 0.5}),
+        EvalRecord(question="q2", answer="a", contexts=[], ground_truth="g",
+                   metrics={"hit_rate@reranked": 0.0, "faithfulness": float("nan")}),
+        EvalRecord(question="q3", answer="a", contexts=[], ground_truth="g",
+                   metrics={"hit_rate@reranked": 1.0}),
+    ]
+    treatment = [
+        EvalRecord(question="q1", answer="a", contexts=[], ground_truth="g",
+                   metrics={"hit_rate@reranked": 1.0, "faithfulness": 0.7}),
+        EvalRecord(question="q2", answer="a", contexts=[], ground_truth="g",
+                   metrics={"hit_rate@reranked": 1.0, "faithfulness": 0.8}),
+        EvalRecord(question="q3", answer="a", contexts=[], ground_truth="g",
+                   metrics={"hit_rate@reranked": 1.0}),
+    ]
+
+    result = compare_modes(
+        {"baseline": baseline, "contextual": treatment}, "baseline", n_resamples=200, seed=4
+    )
+
+    assert set(result) == {"contextual"}
+    assert set(result["contextual"]) == {"hit_rate@reranked", "faithfulness"}
+    assert result["contextual"]["hit_rate@reranked"]["mean_diff"] == pytest.approx(2 / 3)
+    assert result["contextual"]["hit_rate@reranked"]["n"] == 3
+    assert result["contextual"]["faithfulness"]["mean_diff"] == pytest.approx(0.2)
+    assert result["contextual"]["faithfulness"]["n"] == 1
+
+
+def test_compare_modes_returns_empty_when_baseline_absent():
+    from ragpipe.eval.harness import compare_modes
+
+    assert compare_modes({"contextual": []}, "baseline") == {}

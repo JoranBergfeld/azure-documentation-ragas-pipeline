@@ -6,6 +6,7 @@ from statistics import mean
 from typing import Awaitable, Callable
 
 from ragpipe.eval.retrieval_metrics import stage_retrieval_metrics
+from ragpipe.eval.stats import bootstrap_ci_mean, paired_diff_test
 from ragpipe.eval.testset import TestItem
 from ragpipe.models import PipelineState
 
@@ -140,6 +141,25 @@ def aggregate(records: list[EvalRecord]) -> dict[str, float]:
     return means
 
 
+def aggregate_with_ci(
+    records: list[EvalRecord],
+    *,
+    confidence: float = 0.95,
+    n_resamples: int = 10000,
+    seed: int = 12345,
+) -> dict[str, dict]:
+    """Mean and percentile bootstrap CI of each metric across finite item scores."""
+    keys = {k for r in records for k in r.metrics}
+    intervals: dict[str, dict] = {}
+    for k in keys:
+        valid = [r.metrics[k] for r in records if _is_valid(r.metrics.get(k))]
+        if valid:
+            intervals[k] = bootstrap_ci_mean(
+                valid, confidence=confidence, n_resamples=n_resamples, seed=seed
+            )
+    return intervals
+
+
 def aggregate_by_tag(records: list[EvalRecord]) -> dict[str, dict[str, float]]:
     """aggregate() per tag group; records without tags count as 'original'.
 
@@ -155,6 +175,51 @@ def aggregate_by_tag(records: list[EvalRecord]) -> dict[str, dict[str, float]]:
 def aggregate_by_mode(records_by_mode: dict[str, list[EvalRecord]]) -> dict[str, dict[str, float]]:
     """aggregate() per mode. Keys are mode names; values are the per-mode means."""
     return {mode: aggregate(recs) for mode, recs in records_by_mode.items()}
+
+
+def compare_modes(
+    records_by_mode: dict[str, list[EvalRecord]],
+    baseline: str,
+    *,
+    confidence: float = 0.95,
+    n_resamples: int = 10000,
+    seed: int = 12345,
+) -> dict[str, dict[str, dict]]:
+    """Paired bootstrap diffs for each mode and metric against ``baseline``."""
+    if baseline not in records_by_mode:
+        return {}
+
+    baseline_records = records_by_mode[baseline]
+    baseline_metrics = {k for r in baseline_records for k in r.metrics}
+    comparisons: dict[str, dict[str, dict]] = {}
+    for mode, records in records_by_mode.items():
+        if mode == baseline:
+            continue
+        treatment_metrics = {k for r in records for k in r.metrics}
+        metric_results: dict[str, dict] = {}
+        for metric in sorted(treatment_metrics & baseline_metrics):
+            length = max(len(records), len(baseline_records))
+            treatment_scores = [
+                records[i].metrics.get(metric, float("nan")) if i < len(records) else float("nan")
+                for i in range(length)
+            ]
+            baseline_scores = [
+                baseline_records[i].metrics.get(metric, float("nan"))
+                if i < len(baseline_records)
+                else float("nan")
+                for i in range(length)
+            ]
+            result = paired_diff_test(
+                treatment_scores,
+                baseline_scores,
+                confidence=confidence,
+                n_resamples=n_resamples,
+                seed=seed,
+            )
+            if result["n"] > 0:
+                metric_results[metric] = result
+        comparisons[mode] = metric_results
+    return comparisons
 
 
 def coverage(records: list[EvalRecord]) -> dict[str, tuple[int, int]]:
