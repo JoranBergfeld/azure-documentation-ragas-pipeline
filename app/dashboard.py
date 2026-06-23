@@ -4,8 +4,9 @@ import json
 from pathlib import Path
 from typing import Any
 
+from ragpipe.config import RetrievalMode
 from ragpipe.models import PipelineState
-from ragpipe.retrieval.registry import registered_modes
+from ragpipe.retrieval.registry import is_experimental, registered_modes
 
 EVAL_RESULTS_PATH = "eval_results.json"
 PIPELINE_DIAGRAM_PATH = "docs/pipeline.mmd"
@@ -27,6 +28,14 @@ def mode_options() -> list[str]:
 def is_agentic_mode(mode: str) -> bool:
     """True for the ``*_agentic`` wrapper modes (multi-round planner retrieval)."""
     return mode.endswith("_agentic")
+
+
+def mode_label(mode: RetrievalMode | str) -> str:
+    """Run-tab selector label that marks experimental/unevaluated modes."""
+    mode_value = mode.value if isinstance(mode, RetrievalMode) else mode
+    if is_experimental(mode_value):
+        return f"{mode_value} — experimental (unevaluated)"
+    return mode_value
 
 
 def progress_step_view(event) -> tuple[str, str]:
@@ -213,8 +222,15 @@ def main() -> None:  # pragma: no cover - UI entry point
             "Retrieval index / mode",
             mode_options(),
             help="Which substrate/index answers the query. *_agentic modes run "
-            "multiple retrieval rounds and are slower.",
+            "multiple retrieval rounds and are slower; experimental modes have no "
+            "committed eval coverage yet.",
+            format_func=mode_label,
         )
+        if is_experimental(mode):
+            st.warning(
+                "Experimental mode: no committed eval coverage (ADR-0021); "
+                "results are not benchmarked."
+            )
         if st.button("Run", key="run_query") and query:
             from ragpipe.app_wiring import build_pipeline_fn
 

@@ -8,6 +8,8 @@ from fastapi.testclient import TestClient
 from ragpipe.models import Chunk, PipelineState
 
 import app.api as api
+from ragpipe.config import RetrievalMode
+from ragpipe.retrieval.registry import registered_modes
 
 
 @pytest.fixture
@@ -49,6 +51,26 @@ def test_health_ok(client):
     assert res.json()["status"] == "ok"
 
 
+def test_modes_lists_registered_modes_with_experimental_flags(client):
+    res = client.get("/modes")
+
+    assert res.status_code == 200
+    modes = res.json()["modes"]
+    assert [m["mode"] for m in modes] == [mode.value for mode in registered_modes()]
+    assert len(modes) == 9
+
+    flags = {m["mode"]: m["experimental"] for m in modes}
+    expected_experimental = {
+        RetrievalMode.BASELINE_AGENTIC.value,
+        RetrievalMode.RAPTOR_SAC_AGENTIC.value,
+        RetrievalMode.GRAPHRAG_AGENTIC.value,
+        RetrievalMode.COMBINED_AGENTIC.value,
+    }
+    assert {mode for mode, experimental in flags.items() if experimental} == expected_experimental
+    assert sum(flags.values()) == 4
+    assert len(flags) - sum(flags.values()) == 5
+
+
 def test_run_returns_answer_and_stages(client):
     async def fake_pipeline(query: str) -> PipelineState:
         return _state()
@@ -67,6 +89,34 @@ def test_run_returns_answer_and_stages(client):
     assert body["attempt"] == 1
     assert [r["title"] for r in body["stages"]["reranked"]] == ["Doc a"]
     assert body["stages"]["fused"][0]["rank"] == 1
+
+
+def test_run_marks_non_experimental_mode(client):
+    async def fake_pipeline(query: str) -> PipelineState:
+        return _state()
+
+    api.app.dependency_overrides[api.get_pipeline_fn_for_mode] = _make_factory(fake_pipeline)
+    try:
+        res = client.post("/run", json={"query": "what is RRF?", "mode": "contextual"})
+    finally:
+        api.app.dependency_overrides.clear()
+
+    assert res.status_code == 200
+    assert res.json()["experimental"] is False
+
+
+def test_run_marks_agentic_mode_experimental(client):
+    async def fake_pipeline(query: str) -> PipelineState:
+        return _state()
+
+    api.app.dependency_overrides[api.get_pipeline_fn_for_mode] = _make_factory(fake_pipeline)
+    try:
+        res = client.post("/run", json={"query": "what is RRF?", "mode": "baseline_agentic"})
+    finally:
+        api.app.dependency_overrides.clear()
+
+    assert res.status_code == 200
+    assert res.json()["experimental"] is True
 
 
 def test_eval_reads_results_file(client, tmp_path, monkeypatch):
@@ -214,6 +264,46 @@ def test_run_stream_emits_progress_and_result():
     assert "event: result" in body
     assert '"phase": "retrieve"' in body
     assert "RRF merges ranked lists." in body  # serialized final state
+
+
+def test_state_payload_coerces_nan_faithfulness_to_none():
+    # RAGAS faithfulness can be NaN. The SSE result frame serializes the payload
+    # with json.dumps, which emits a literal `NaN` token that JS JSON.parse
+    # rejects. The payload must be strict-JSON-safe.
+    s = _state()
+    s.faithfulness = float("nan")
+    payload = api._state_payload("contextual", s)
+    assert payload["faithfulness"] is None
+    json.dumps(payload, allow_nan=False)  # strict JSON: no NaN/Infinity tokens
+
+
+def test_run_stream_emits_valid_json_when_faithfulness_is_nan():
+    # /run/stream feeds external JS clients (README); a NaN score in a progress
+    # detail or the result frame must not emit the invalid `NaN` JSON token.
+    from ragpipe.progress import ProgressEvent
+
+    async def fake_pipeline(query, *, on_event=None):
+        on_event(ProgressEvent(phase="faithfulness", status="complete",
+                               detail={"score": float("nan"), "threshold": 0.7}))
+        s = _state()
+        s.faithfulness = float("nan")
+        return s
+
+    api.app.dependency_overrides[api.get_pipeline_fn_for_mode] = _make_factory(fake_pipeline)
+    try:
+        res = TestClient(api.app).post("/run/stream", json={"query": "x", "mode": "contextual"})
+    finally:
+        api.app.dependency_overrides.clear()
+
+    assert res.status_code == 200
+    assert "NaN" not in res.text
+    # Every data frame must parse as strict JSON (parse_constant fires on NaN/Infinity).
+    def _reject(token):
+        raise AssertionError(f"non-finite JSON token: {token}")
+
+    for line in res.text.splitlines():
+        if line.startswith("data: "):
+            json.loads(line[len("data: "):], parse_constant=_reject)
 
 
 def test_run_stream_emits_error_frame_on_failure():

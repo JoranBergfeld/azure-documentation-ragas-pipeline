@@ -1,7 +1,12 @@
 from __future__ import annotations
 
 from ragpipe.config import RetrievalMode
-from ragpipe.retrieval.registry import registered_modes, build_substrate
+from ragpipe.retrieval.registry import (
+    build_substrate,
+    experimental_modes,
+    is_experimental,
+    registered_modes,
+)
 from ragpipe.retrieval.substrate import RetrievalSubstrate
 
 
@@ -74,6 +79,41 @@ def test_all_modes_registered():
     from ragpipe.config import RetrievalMode
     from ragpipe.retrieval.registry import registered_modes
     assert set(registered_modes()) == set(RetrievalMode)
+
+
+def test_experimental_modes_are_exactly_unevaluated_agentic_wrappers():
+    expected = [
+        RetrievalMode.BASELINE_AGENTIC,
+        RetrievalMode.RAPTOR_SAC_AGENTIC,
+        RetrievalMode.GRAPHRAG_AGENTIC,
+        RetrievalMode.COMBINED_AGENTIC,
+    ]
+
+    assert experimental_modes() == expected
+    assert set(experimental_modes()).issubset(registered_modes())
+
+
+def test_is_experimental_accepts_modes_and_values():
+    experimental = {
+        RetrievalMode.BASELINE_AGENTIC,
+        RetrievalMode.RAPTOR_SAC_AGENTIC,
+        RetrievalMode.GRAPHRAG_AGENTIC,
+        RetrievalMode.COMBINED_AGENTIC,
+    }
+    evaluated = {
+        RetrievalMode.CONTEXTUAL,
+        RetrievalMode.BASELINE,
+        RetrievalMode.RAPTOR_SAC,
+        RetrievalMode.GRAPHRAG,
+        RetrievalMode.COMBINED,
+    }
+
+    for mode in experimental:
+        assert is_experimental(mode) is True
+        assert is_experimental(mode.value) is True
+    for mode in evaluated:
+        assert is_experimental(mode) is False
+        assert is_experimental(mode.value) is False
 
 
 def test_every_mode_builds_with_fake_ctx():
