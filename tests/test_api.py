@@ -216,6 +216,46 @@ def test_run_stream_emits_progress_and_result():
     assert "RRF merges ranked lists." in body  # serialized final state
 
 
+def test_state_payload_coerces_nan_faithfulness_to_none():
+    # RAGAS faithfulness can be NaN. The SSE result frame serializes the payload
+    # with json.dumps, which emits a literal `NaN` token that JS JSON.parse
+    # rejects. The payload must be strict-JSON-safe.
+    s = _state()
+    s.faithfulness = float("nan")
+    payload = api._state_payload("contextual", s)
+    assert payload["faithfulness"] is None
+    json.dumps(payload, allow_nan=False)  # strict JSON: no NaN/Infinity tokens
+
+
+def test_run_stream_emits_valid_json_when_faithfulness_is_nan():
+    # /run/stream feeds external JS clients (README); a NaN score in a progress
+    # detail or the result frame must not emit the invalid `NaN` JSON token.
+    from ragpipe.progress import ProgressEvent
+
+    async def fake_pipeline(query, *, on_event=None):
+        on_event(ProgressEvent(phase="faithfulness", status="complete",
+                               detail={"score": float("nan"), "threshold": 0.7}))
+        s = _state()
+        s.faithfulness = float("nan")
+        return s
+
+    api.app.dependency_overrides[api.get_pipeline_fn_for_mode] = _make_factory(fake_pipeline)
+    try:
+        res = TestClient(api.app).post("/run/stream", json={"query": "x", "mode": "contextual"})
+    finally:
+        api.app.dependency_overrides.clear()
+
+    assert res.status_code == 200
+    assert "NaN" not in res.text
+    # Every data frame must parse as strict JSON (parse_constant fires on NaN/Infinity).
+    def _reject(token):
+        raise AssertionError(f"non-finite JSON token: {token}")
+
+    for line in res.text.splitlines():
+        if line.startswith("data: "):
+            json.loads(line[len("data: "):], parse_constant=_reject)
+
+
 def test_run_stream_emits_error_frame_on_failure():
     async def boom_pipeline(query, *, on_event=None):
         raise RuntimeError("kaboom")

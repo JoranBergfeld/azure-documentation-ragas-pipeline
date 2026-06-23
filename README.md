@@ -127,6 +127,13 @@ delete its `eval_results_<mode>.json` and re-run.
 
 Set `TESTSET_MODE=synthetic` in `.env` to generate the test set from the corpus instead.
 
+Hand-authored `data/testset.jsonl` items use `ground_truth_context` for one legacy/factoid
+gold URL, `ground_truth_urls` for multi-hop lists (URL-match hit rate/MRR use any-match),
+or neither for `global` sensemaking items, which are judged only by graded RAGAS metrics.
+Tags such as `multihop` and `global` surface these cohorts in `means_by_tag`. To expand
+the cohort, author labels by hand and verify each against live Microsoft Learn pages; gold
+URLs must exist in `data/corpus_sources.yaml`. Never auto-generate eval labels.
+
 Before the first eval run on a new machine:
 `uv run python scripts/verify_judges.py` (smokes all three model routes + the
 decoration call before any paid run).
