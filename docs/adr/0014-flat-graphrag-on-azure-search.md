@@ -79,6 +79,10 @@ won't slot into the RAGAS harness without a substantial adapter.
 - Local search quality depends on extraction quality. A chunk with no entities extracted
   contributes nothing to graph traversal. The build logs these as skipped chunks, and
   the global search path still covers them via community reports.
+- The `global` community stage carries no source URL by construction because GraphRAG
+  community reports synthesize over many source chunks (arXiv:2404.16130). Per ADR-0002,
+  it is excluded from URL-match `hit_rate`/`mrr` and evaluated via graded RAGAS
+  `context_precision`/`context_recall` instead.
 - Community detection uses Leiden (graspologic), which requires an extra dependency.
   The fallback on an empty or tiny graph is one trivial community covering all entities.
 

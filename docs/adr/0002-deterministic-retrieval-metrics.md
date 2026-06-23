@@ -38,6 +38,10 @@ that binary URL match cannot).
   so they can run on every eval without the `PER_STAGE_METRICS` cost gate.
 - Page-level granularity: a hit means the right *page*, not necessarily the right
   *chunk* of it. Acceptable: DRM (wrong document) is the failure mode under attack.
+- Stages with no canonical source URL, such as GraphRAG community/global LLM-summary
+  stages, are excluded from URL-match `hit_rate`/`mrr`; interpreting a structural
+  0.0 there as retrieval failure was a measurement artifact. Use graded RAGAS
+  `context_precision`/`context_recall` for those stages instead.
 - Questions whose answer genuinely spans multiple pages need a single canonical URL
   in the test set (or the loader must accept a list later).
 
@@ -48,3 +52,5 @@ that binary URL match cannot).
 - Saad-Falcon et al., *ARES: An Automated Evaluation Framework for RAG* (LLM-judge
   noise and the need for calibrated/statistical treatment) —
   https://arxiv.org/abs/2311.09476
+- Microsoft Research, *GraphRAG: A modular graph-based RAG system* (community reports
+  synthesize over many source chunks) — https://arxiv.org/abs/2404.16130
