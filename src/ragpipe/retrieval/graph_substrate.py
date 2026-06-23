@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import re
 from typing import Callable
 
 from ragpipe.models import Chunk
+from ragpipe.progress import emit
 from ragpipe.retrieval.rrf import reciprocal_rank_fusion
 from ragpipe.retrieval.substrate import RetrievalResult
 
@@ -113,21 +115,70 @@ def build_adjacency(client) -> dict[str, list[Chunk]]:  # pragma: no cover
     return adjacency
 
 
-class GraphRAGSubstrate:
-    """Local (entity match + 1-hop relationship expansion) + global (community
-    report ranking) search, fused by RRF. entity_search/community_search expose
-    search_entities(query,k)/search_communities(query,k) -> list[Chunk]. adjacency
-    maps an entity title -> its relationship Chunks (built once from the
-    relationships index at wiring time)."""
+def classify_query(query: str) -> str:
+    """Route GraphRAG queries with a conservative breadth-cue heuristic.
 
-    def __init__(self, *, name, entity_search, community_search, adjacency, rrf_k=60):
+    Factoid single-page lookups default to local retrieval. Global/community
+    retrieval is reserved for explicit sensemaking cues; an LLM or ``ctx.plan``
+    router is a documented future seam.
+    """
+    normalized = query.lower()
+    global_cues = (
+        "overview",
+        "summarize",
+        "summary",
+        "compare",
+        "comparison",
+        "across",
+        "theme",
+        "themes",
+        "trends",
+        "in general",
+        "landscape",
+        "broadly",
+        "overall",
+    )
+    if any(cue in normalized for cue in global_cues):
+        return "global"
+    if re.search(r"\bmain\b.*\b(services|types|categories|options)\b", normalized):
+        return "global"
+    if re.search(r"\bwhat are the\b.*\b(types|categories|kinds)\b", normalized):
+        return "global"
+    if re.search(r"\bhow do\b.*\brelate\b", normalized):
+        return "global"
+    return "local"
+
+
+class GraphRAGSubstrate:
+    """Routed GraphRAG retrieval over local graph neighborhoods and communities.
+
+    Local search uses entity match + 1-hop relationship expansion. Global search
+    ranks community reports and is RRF-fused with local results only when the
+    route asks for breadth. ``entity_search``/``community_search`` expose
+    ``search_entities(query,k)``/``search_communities(query,k)``; ``adjacency``
+    maps an entity title to relationship chunks loaded at wiring time.
+    """
+
+    def __init__(
+        self,
+        *,
+        name,
+        entity_search,
+        community_search,
+        adjacency,
+        rrf_k=60,
+        route_fn: Callable[[str], str] | None = None,
+    ):
         self.name = name
         self._entities = entity_search
         self._communities = community_search
         self._adjacency = adjacency
         self._rrf_k = rrf_k
+        self._route_fn = route_fn or classify_query
 
     async def retrieve(self, query: str, k: int, on_event=None) -> RetrievalResult:
+        route = self._route_fn(query)
+        emit(on_event, "retrieve.route", "complete", message=route, route=route)
         seeds = self._entities.search_entities(query, k)
         expanded: list[Chunk] = list(seeds)
         seen = {c.id for c in seeds}
@@ -136,6 +187,10 @@ class GraphRAGSubstrate:
                 if rel.id not in seen:
                     expanded.append(rel)
                     seen.add(rel.id)
-        glob = self._communities.search_communities(query, k)
-        fused = reciprocal_rank_fusion(expanded, glob, k=self._rrf_k)
-        return RetrievalResult(candidates=fused, stages={"local": expanded, "global": glob, "fused": fused})
+        if route == "global":
+            glob = self._communities.search_communities(query, k)
+            fused = reciprocal_rank_fusion(expanded, glob, k=self._rrf_k)
+            stages = {"local": expanded, "global": glob, "fused": fused}
+            return RetrievalResult(candidates=fused, stages=stages)
+        stages = {"local": expanded, "fused": expanded}
+        return RetrievalResult(candidates=expanded, stages=stages)
