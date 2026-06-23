@@ -5,6 +5,7 @@ __pycache__/
 .pytest_cache/
 .env
 eval_results.json
+eval_results_canary.json
 infra/main.json
 data/testset.synthetic.jsonl
 

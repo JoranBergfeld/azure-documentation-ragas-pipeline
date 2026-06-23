@@ -8,7 +8,7 @@ dependencies = [
     "azure-search-documents>=11.5.0",
     "azure-ai-projects>=2.0.0",
     "azure-identity",
-    "ragas",
+    "ragas==0.4.3",
     "langchain-openai",
     "streamlit",
     "pyyaml",

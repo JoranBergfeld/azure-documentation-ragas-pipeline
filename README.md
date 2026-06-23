@@ -127,6 +127,23 @@ delete its `eval_results_<mode>.json` and re-run.
 
 Set `TESTSET_MODE=synthetic` in `.env` to generate the test set from the corpus instead.
 
+### Faithfulness drift canary
+
+```bash
+uv run python -m ragpipe.eval.canary
+```
+
+The canary re-scores the frozen labeled set in `data/faithfulness_canary.jsonl` with the
+online judge and writes `eval_results_canary.json` (gitignored because it is a paid live
+artifact). It fails nonzero when any label drifts or the installed RAGAS version differs
+from the pinned calibration version. Pipeline traces and progress events now include
+per-claim faithfulness verdicts for debugging.
+
+Faithfulness is a **grounding** heuristic, not a correctness oracle: wrong retrieved
+context can still produce a faithful answer. The default `0.7` threshold is intentionally
+unchanged and remains uncalibrated pending the human-label calibration step documented in
+ADR-0022.
+
 Before the first eval run on a new machine:
 `uv run python scripts/verify_judges.py` (smokes all three model routes + the
 decoration call before any paid run).

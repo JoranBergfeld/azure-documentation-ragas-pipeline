@@ -12,7 +12,7 @@ def make_deps(settings, retrieve, reranker, generator, scorer) -> PipelineDeps:
         retrieve=retrieve,
         rerank=lambda q, fused, k: reranker.rerank(q, fused, top_k=k),
         generate=lambda q, chunks, prev: generator.generate(q, chunks, prev),
-        score=lambda q, a, c: scorer.score(q, a, c),
+        score=lambda q, a, c: scorer.score_detailed(q, a, c),
         threshold=settings.faithfulness_threshold,
         max_retries=settings.max_retries,
         top_k=settings.top_k,
@@ -34,7 +34,7 @@ def build_pipeline_fn(
     from ragpipe.config import RetrievalMode
     from ragpipe.embeddings import build_embed_fn
     from ragpipe.generate import Generator
-    from ragpipe.guardrail import FaithfulnessScorer, build_ragas_faithfulness
+    from ragpipe.guardrail import FaithfulnessScorer, build_ragas_faithfulness_detailed
     from ragpipe.retrieval.registry import build_substrate
     from ragpipe.retrieval.rerank import SemanticReranker
     from ragpipe.search_index import SEMANTIC_CONFIG_NAME
@@ -130,7 +130,7 @@ def build_pipeline_fn(
         retrieve=substrate.retrieve,
         reranker=reranker,
         generator=Generator(agent),
-        scorer=FaithfulnessScorer(build_ragas_faithfulness(settings)),
+        scorer=FaithfulnessScorer(build_ragas_faithfulness_detailed(settings)),
     )
 
     async def pipeline_fn(query: str, *, on_event=None) -> PipelineState:
