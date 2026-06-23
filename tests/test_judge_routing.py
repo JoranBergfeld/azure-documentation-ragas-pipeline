@@ -1,8 +1,10 @@
+from __future__ import annotations
+
 import pytest
 
 from ragpipe import foundry_judge, guardrail
 from ragpipe.foundry_judge import build_judge_complete_fn, judge_provider
-from ragpipe.guardrail import build_ragas_faithfulness
+from ragpipe.guardrail import build_ragas_faithfulness, build_ragas_faithfulness_detailed
 
 
 class _S:
@@ -95,4 +97,36 @@ def test_gate_dispatches_openai_for_kimi(monkeypatch):
         lambda s: calls.append("openai") or "O",
     )
     assert build_ragas_faithfulness(_S("Kimi-K2.5")) == "O"
+    assert calls == ["openai"]
+
+
+def test_detailed_gate_dispatches_anthropic_for_claude(monkeypatch):
+    calls = []
+    monkeypatch.setattr(
+        guardrail,
+        "_build_claude_faithfulness_detailed",
+        lambda s: calls.append("anthropic") or "A",
+    )
+    monkeypatch.setattr(
+        guardrail,
+        "_build_openai_faithfulness_detailed",
+        lambda s: calls.append("openai") or "O",
+    )
+    assert build_ragas_faithfulness_detailed(_S("claude-sonnet-4-6")) == "A"
+    assert calls == ["anthropic"]
+
+
+def test_detailed_gate_dispatches_openai_for_kimi(monkeypatch):
+    calls = []
+    monkeypatch.setattr(
+        guardrail,
+        "_build_claude_faithfulness_detailed",
+        lambda s: calls.append("anthropic") or "A",
+    )
+    monkeypatch.setattr(
+        guardrail,
+        "_build_openai_faithfulness_detailed",
+        lambda s: calls.append("openai") or "O",
+    )
+    assert build_ragas_faithfulness_detailed(_S("Kimi-K2.5")) == "O"
     assert calls == ["openai"]

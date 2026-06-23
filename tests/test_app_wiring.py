@@ -30,7 +30,7 @@ def test_make_deps_wires_callables_from_injected_components():
             return "ans"
 
     class FakeScorer:
-        async def score(self, q, a, c):
+        async def score_detailed(self, q, a, c):
             return 0.9
 
     deps = make_deps(
@@ -70,7 +70,7 @@ def test_make_deps_threads_top_k_and_new_signatures():
             return "a"
 
     class _Scorer:
-        def score(self, q, a, c):
+        def score_detailed(self, q, a, c):
             return 1.0
 
     async def fake_retrieve(q, k):

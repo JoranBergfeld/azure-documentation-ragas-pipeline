@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import math
 from pathlib import Path
 from typing import Any, Awaitable, Callable
 
@@ -45,12 +46,28 @@ class CompareRequest(BaseModel):
     modes: list[RetrievalMode]
 
 
+def _json_safe(value: Any) -> Any:
+    """Recursively replace non-finite floats (NaN/Infinity) with None.
+
+    RAGAS faithfulness can be NaN (an unparseable judge response). ``json.dumps``
+    emits that as the literal ``NaN`` token, which JS ``JSON.parse`` rejects — the
+    SSE stream feeds external web clients, so the frames must be strict JSON.
+    """
+    if isinstance(value, float):
+        return value if math.isfinite(value) else None
+    if isinstance(value, dict):
+        return {k: _json_safe(v) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_json_safe(v) for v in value]
+    return value
+
+
 def _state_payload(mode: str, state: PipelineState) -> dict[str, Any]:
     return {
         "mode": mode,
         "query": state.query,
         "answer": state.answer,
-        "faithfulness": state.faithfulness,
+        "faithfulness": _json_safe(state.faithfulness),
         "attempt": state.attempt,
         "lowConfidence": state.low_confidence,
         "abstained": state.abstained,
@@ -59,7 +76,7 @@ def _state_payload(mode: str, state: PipelineState) -> dict[str, Any]:
 
 
 def _sse(event: str, data: dict) -> str:
-    return f"event: {event}\ndata: {json.dumps(data)}\n\n"
+    return f"event: {event}\ndata: {json.dumps(_json_safe(data))}\n\n"
 
 
 @app.get("/health")

@@ -1,5 +1,6 @@
 import pytest
 
+from ragpipe.guardrail import ClaimVerdict, FaithfulnessResult
 from ragpipe.models import Chunk, PipelineState
 from ragpipe.retrieval.substrate import RetrievalResult
 from ragpipe.workflow import ABSTENTION_ANSWER, PipelineDeps, run_pipeline
@@ -61,6 +62,38 @@ async def test_pipeline_passes_first_try():
     # substrate stages are populated and reranked is mirrored into stages
     assert len(state.stages["fused"]) > 0
     assert state.reranked == state.stages["reranked"]
+
+
+@pytest.mark.asyncio
+async def test_pipeline_logs_structured_faithfulness_claims():
+    claim = ClaimVerdict(statement="RRF merges results.", verdict=True, reason="Context says this.")
+    events, sink = _events()
+
+    state = await run_pipeline(
+        "what is RRF?",
+        _deps([FaithfulnessResult(score=0.9, claims=(claim,))]),
+        on_event=sink,
+    )
+
+    assert state.faithfulness == 0.9
+    claims = [{"statement": claim.statement, "verdict": True, "reason": claim.reason}]
+    trace = [e for e in state.trace if e.stage == "faithfulness"][-1]
+    event = [e for e in events if e.phase == "faithfulness" and e.status == "complete"][-1]
+    assert trace.data["claims"] == claims
+    assert event.detail["claims"] == claims
+
+
+@pytest.mark.asyncio
+async def test_pipeline_keeps_float_scorer_back_compat_with_empty_claims():
+    events, sink = _events()
+
+    state = await run_pipeline("what is RRF?", _deps([0.88]), on_event=sink)
+
+    assert state.faithfulness == 0.88
+    trace = [e for e in state.trace if e.stage == "faithfulness"][-1]
+    event = [e for e in events if e.phase == "faithfulness" and e.status == "complete"][-1]
+    assert trace.data["claims"] == []
+    assert event.detail["claims"] == []
 
 
 @pytest.mark.asyncio

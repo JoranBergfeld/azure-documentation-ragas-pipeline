@@ -139,6 +139,31 @@ def test_aggregate_by_mode():
     assert out["contextual"]["hit_rate@reranked"] == 0.0
 
 
+def test_stages_from_records_preserves_substrate_order():
+    # The per-stage sweep must score the substrate's own stages in pipeline
+    # order, not a hardcoded hybrid (dense/bm25/...) list — graph modes name
+    # local/global, agentic modes name iter_0..iter_N.
+    from ragpipe.eval.harness import stages_from_records
+
+    r = EvalRecord(
+        question="q", answer="a", contexts=[], ground_truth="g",
+        stage_contexts={"local": ["x"], "global": ["y"], "fused": ["z"], "reranked": ["w"]},
+    )
+    assert stages_from_records([r]) == ["local", "global", "fused", "reranked"]
+
+
+def test_stages_from_records_unions_across_records_keeping_first_seen_order():
+    from ragpipe.eval.harness import stages_from_records
+
+    r1 = EvalRecord(question="q", answer="a", contexts=[], ground_truth="g",
+                    stage_contexts={"dense": [], "fused": [], "reranked": []})
+    r2 = EvalRecord(question="q", answer="a", contexts=[], ground_truth="g",
+                    stage_contexts={"dense": [], "bm25": [], "fused": [], "reranked": []})
+    stages = stages_from_records([r1, r2])
+    assert set(stages) == {"dense", "bm25", "fused", "reranked"}
+    assert stages.index("dense") < stages.index("bm25")
+
+
 def test_ragas_run_config_overrides_starving_defaults():
     # The reasoning offline judge timed out under RAGAS defaults (timeout=180s,
     # max_workers=16): every faithfulness/context_precision job hit the wall and

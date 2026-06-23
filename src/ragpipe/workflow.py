@@ -1,10 +1,10 @@
 from __future__ import annotations
 
 import sys
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from typing import Callable
 
-from ragpipe.guardrail import LoopDecision, decide_next
+from ragpipe.guardrail import LoopDecision, as_faithfulness_result, decide_next
 from ragpipe.models import Chunk, PipelineState
 from ragpipe.progress import ProgressSink, emit
 from ragpipe.retrieval.substrate import RetrievalResult
@@ -118,7 +118,7 @@ async def run_pipeline(
             message=f"Scoring faithfulness (attempt {state.attempt + 1})",
         )
         try:
-            score = await _maybe_await(deps.score(query, state.answer, state.reranked))
+            raw_score = await _maybe_await(deps.score(query, state.answer, state.reranked))
         except Exception as exc:  # judge failure -> fail-closed
             # Logged so operators can tell an outage from a scorer bug; the
             # decision path is identical either way (abstain immediately).
@@ -127,7 +127,7 @@ async def run_pipeline(
                 file=sys.stderr,
                 flush=True,
             )
-            score = None
+            result = as_faithfulness_result(None)
             emit(
                 on_event,
                 "faithfulness",
@@ -137,17 +137,27 @@ async def run_pipeline(
                 error=type(exc).__name__,
             )
         else:
+            result = as_faithfulness_result(raw_score)
+            score = result.score
+            claims = [asdict(c) for c in result.claims]
             emit(
                 on_event,
                 "faithfulness",
                 "complete",
                 attempt=state.attempt,
-                message=(f"Faithfulness {score:.2f}" if score is not None else "Faithfulness n/a"),
-                score=score,
+                message=(
+                    f"Faithfulness {score:.2f}" if score is not None else "Faithfulness n/a"
+                ),
+                score=result.score,
                 threshold=deps.threshold,
+                claims=claims,
             )
+        score = result.score
+        claims = [asdict(c) for c in result.claims]
         state.faithfulness = score
-        state.add_trace("faithfulness", {"score": score, "attempt": state.attempt})
+        state.add_trace(
+            "faithfulness", {"score": score, "attempt": state.attempt, "claims": claims}
+        )
 
         decision = decide_next(
             score=score,
