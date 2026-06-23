@@ -35,17 +35,17 @@
   <g>
     <rect x="28" y="96" width="206" height="44" rx="8" fill="#E3F0FB" stroke="#0078D4" stroke-width="1.5"/>
     <text x="131" y="115" text-anchor="middle" font-size="12.5" font-weight="600" fill="#1B2733">contextual</text>
-    <text x="131" y="130" text-anchor="middle" font-size="10" fill="#5B6B7B">SAC chunks · Foundry-bound (ADR-0007)</text>
+    <text x="131" y="130" text-anchor="middle" font-size="10" fill="#5B6B7B">contextual chunks · Foundry-bound (ADR-0007)</text>
   </g>
   <g>
     <rect x="28" y="148" width="206" height="44" rx="8" fill="#E3F0FB" stroke="#0078D4" stroke-width="1.5"/>
     <text x="131" y="167" text-anchor="middle" font-size="12.5" font-weight="600" fill="#1B2733">baseline</text>
-    <text x="131" y="182" text-anchor="middle" font-size="10" fill="#5B6B7B">plain chunks · no SAC</text>
+    <text x="131" y="182" text-anchor="middle" font-size="10" fill="#5B6B7B">plain chunks · no contextual decoration</text>
   </g>
   <g>
     <rect x="28" y="200" width="206" height="44" rx="8" fill="#E3F0FB" stroke="#0078D4" stroke-width="1.5"/>
     <text x="131" y="219" text-anchor="middle" font-size="12.5" font-weight="600" fill="#1B2733">raptor-sac</text>
-    <text x="131" y="234" text-anchor="middle" font-size="9.5" fill="#5B6B7B">SAC leaves + RAPTOR summaries (ADR-0013)</text>
+    <text x="131" y="234" text-anchor="middle" font-size="9.5" fill="#5B6B7B">contextual leaves + RAPTOR summaries (ADR-0013)</text>
   </g>
   <g>
     <rect x="28" y="288" width="206" height="40" rx="8" fill="#E3F0FB" stroke="#0078D4" stroke-width="1.5"/>
@@ -80,7 +80,7 @@
   </g>
   <g>
     <rect x="300" y="204" width="214" height="44" rx="8" fill="#EEF2F6" stroke="#9AA8B5" stroke-width="1.5"/>
-    <text x="407" y="223" text-anchor="middle" font-size="12.5" font-weight="600" fill="#1B2733">RAPTOR+SAC</text>
+    <text x="407" y="223" text-anchor="middle" font-size="12.5" font-weight="600" fill="#1B2733">RAPTOR/contextual</text>
     <text x="407" y="238" text-anchor="middle" font-size="10" fill="#5B6B7B">collapsed tree — one hybrid over all levels</text>
   </g>
   <g>
@@ -91,7 +91,7 @@
   <g>
     <rect x="300" y="436" width="214" height="44" rx="8" fill="#EEF2F6" stroke="#9AA8B5" stroke-width="1.5"/>
     <text x="407" y="455" text-anchor="middle" font-size="12.5" font-weight="600" fill="#1B2733">Combined</text>
-    <text x="407" y="470" text-anchor="middle" font-size="10" fill="#5B6B7B">RRF-fuse RAPTOR+SAC ⊕ GraphRAG candidates</text>
+    <text x="407" y="470" text-anchor="middle" font-size="10" fill="#5B6B7B">RRF-fuse RAPTOR/contextual ⊕ GraphRAG candidates</text>
   </g>
 
   <!-- index -> substrate -->
@@ -102,7 +102,7 @@
   <path d="M234,354 L296,346" stroke="#6B7A88" stroke-width="1.5" fill="none" marker-end="url(#arrow)"/>
   <path d="M234,400 C 268,388 270,352 296,348" stroke="#6B7A88" stroke-width="1.5" fill="none" marker-end="url(#arrow)"/>
 
-  <!-- RAPTOR+SAC and GraphRAG feed Combined -->
+  <!-- RAPTOR/contextual and GraphRAG feed Combined -->
   <path d="M360,248 C 350,300 352,420 372,432" stroke="#6B7A88" stroke-width="1.5" fill="none" marker-end="url(#arrow)"/>
   <path d="M452,368 C 460,400 452,420 444,432" stroke="#6B7A88" stroke-width="1.5" fill="none" marker-end="url(#arrow)"/>
   <text x="356" y="408" font-size="13" font-weight="700" fill="#9AA8B5">⊕</text>

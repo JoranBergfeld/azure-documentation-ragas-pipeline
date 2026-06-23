@@ -18,6 +18,14 @@ call per chunk (full page markdown + chunk → 1–2 sentences, `temperature=0`)
 of a deterministic heading breadcrumb. This is Anthropic's contextual-retrieval
 recipe.
 
+## Terminology note
+
+The repo's `raptor_sac` mode, `raptor-sac` index, and any `SAC` shorthand in code
+refer to the implemented per-chunk Anthropic Contextual Retrieval described in this
+ADR's Decision. The **SAC** acronym in the rejected alternative below refers to the
+distinct per-document situating technique from arXiv:2510.06999. They are not the
+same thing.
+
 ## Alternatives rejected
 
 - **SAC — one summary per document, prepended to all its chunks**
@@ -40,7 +48,7 @@ recipe.
   (see ADR-0005). Azure OpenAI prompt caching amortizes the shared page-markdown
   prefix.
 - If post-change measurement (ADR-0006) shows no gain on the hard test subsets,
-  this ADR is revisited; SAC and breadcrumb-only are the cheaper fallbacks.
+  this ADR is revisited; per-document SAC and breadcrumb-only are the cheaper fallbacks.
 
 ## Sources
 

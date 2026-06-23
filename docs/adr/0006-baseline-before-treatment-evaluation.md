@@ -23,8 +23,8 @@ any metric movement is unattributable.
    followed by the post-change run.
 3. **Success criteria fixed in advance**: `hit_rate`/`mrr` improve on `paraphrase`
    and `lookalike`; no regression on `original`; RAGAS faithfulness mean does not
-   degrade. No gain on the hard subsets ⇒ revisit ADR-0001 (SAC / breadcrumb-only
-   fallbacks).
+   degrade. No gain on the hard subsets ⇒ revisit ADR-0001 (per-document SAC /
+   breadcrumb-only fallbacks).
 
 ## Alternatives rejected
 
