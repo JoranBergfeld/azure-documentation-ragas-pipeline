@@ -7,12 +7,16 @@ Agent Framework + Azure AI Foundry + Azure AI Search, evaluated with RAGAS.
 
 The whole flow: **① Ingest** crawls Microsoft Learn, extracts main content as
 markdown (code/tables preserved), splits on headings, decorates every chunk with a
-breadcrumb + cached LLM situating context (SAC — visible to retrieval only, see
-`docs/adr/0001`), and indexes it across the substrate indexes in Azure AI Search
-(`contextual`, `baseline`, `raptor-sac`, and the three `graph-*` indexes);
+breadcrumb + cached LLM situating context using Anthropic-style per-chunk contextual
+retrieval (visible to retrieval only, see
+`docs/adr/0001-contextual-chunk-decoration.md`), and indexes it across the substrate
+indexes in Azure AI Search (`contextual`, `baseline`, `raptor-sac`, and the three
+`graph-*` indexes);
 **② Query pipeline** runs a **pluggable retrieval substrate** (ADR-0012) — one of
-**9 modes**: `contextual`, `baseline`, `raptor_sac` (RAPTOR collapsed-tree over SAC
-leaves, ADR-0013), `graphrag` (flat local+global graph, ADR-0014), `combined`
+**9 modes**: `contextual`, `baseline`, `raptor_sac` (RAPTOR collapsed-tree over
+Anthropic-contextual leaves; the legacy `sac` token in mode/index names refers to
+this implemented per-chunk technique, not per-document SAC from arXiv:2510.06999;
+ADR-0013), `graphrag` (flat local+global graph, ADR-0014), `combined`
 (RAPTOR ⊕ GraphRAG, RRF-fused), and the four `*_agentic` wrappers (bounded
 plan→retrieve loop, ADR-0015) — then a shared tail: Azure semantic rerank → Foundry
 generator agent, with a directive RAGAS faithfulness guardrail judged by Claude

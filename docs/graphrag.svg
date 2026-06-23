@@ -61,7 +61,7 @@
   <!-- ===== Band 2: query time ===== -->
   <rect x="24" y="312" width="1132" height="270" rx="12" fill="#FAF7FD" stroke="#E2D6F0"/>
   <text x="40" y="334" font-size="13" font-weight="700" fill="#5B6B7B">Query time — GraphRAGSubstrate.retrieve(query, k)</text>
-  <text x="1140" y="334" text-anchor="end" font-size="10.5" fill="#8661C5">combined mode RRF-fuses local ⊕ global with RAPTOR+SAC</text>
+  <text x="1140" y="334" text-anchor="end" font-size="10.5" fill="#8661C5">combined mode RRF-fuses local ⊕ global with RAPTOR/contextual</text>
 
   <g>
     <rect x="36" y="428" width="100" height="52" rx="8" fill="#EEF2F6" stroke="#9AA8B5" stroke-width="1.5"/>
