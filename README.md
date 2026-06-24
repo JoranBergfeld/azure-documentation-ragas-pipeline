@@ -17,7 +17,9 @@ leaves, ADR-0013), `graphrag` (flat local+global graph, ADR-0014), `combined`
 plan→retrieve loop, ADR-0015) — then a shared tail: Azure semantic rerank → Foundry
 generator agent, with a directive RAGAS faithfulness guardrail judged by Claude
 (ADR-0009) that widens the rerank window and regenerates on weak grounding, and
-abstains when retries exhaust; **③ Evaluation** replays every mode over a tagged test
+abstains when retries exhaust (the gate scores **grounding in the retrieved
+context, not factual correctness** — a calibrated threshold + drift canary keep it
+honest, ADR-0018); **③ Evaluation** replays every mode over a tagged test
 set and scores deterministic per-stage retrieval metrics (hit rate / MRR) plus the
 RAGAS suite, comparing modes head-to-head against a frozen baseline (ADR-0016).
 
@@ -130,6 +132,30 @@ Set `TESTSET_MODE=synthetic` in `.env` to generate the test set from the corpus 
 Before the first eval run on a new machine:
 `uv run python scripts/verify_judges.py` (smokes all three model routes + the
 decoration call before any paid run).
+
+### Faithfulness gate calibration & drift canary
+
+The online gate accepts an answer when its RAGAS-faithfulness score clears
+`FAITHFULNESS_THRESHOLD`. That score measures **grounding in the retrieved context,
+not factual correctness**, and LLM-judge faithfulness scores are uncalibrated, so
+the threshold is an operating point to be *fit*, not a magic constant (ADR-0018):
+
+```bash
+# Fit + pin the threshold from a human-labeled grounding set, tracking false-pass
+# (unfaithful answer shown) vs false-abstain (faithful answer suppressed) separately.
+# Replace the example set with real labels first; writes data/faithfulness_calibration.json.
+uv run python scripts/calibrate_threshold.py --labeled data/your_labeled_set.jsonl --max-false-pass 0.1
+
+# Re-score the frozen canary (data/faithfulness_canary.jsonl) with BOTH judge
+# families and exit non-zero on drift (label regression, cross-family divergence,
+# or a judge outage). Runs weekly via .github/workflows/faithfulness-canary.yml
+# once the CANARY_ENABLED repo variable + Azure secrets are set.
+uv run python scripts/faithfulness_canary.py
+```
+
+`ragas` is pinned (`==0.4.3`) because judge scores are not comparable across
+versions; bump it deliberately and recalibrate + re-baseline the canary in the same
+change.
 
 Generate synthetic test-item candidates from pages you name (Claude-authored,
 overlap-screened; see `docs/adr/0010`):
