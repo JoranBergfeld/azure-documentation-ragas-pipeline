@@ -93,3 +93,30 @@ async def test_graph_substrate_accepts_injected_classifier():
     result = await sub.retrieve("anything", k=10)
     assert com.calls == 1
     assert "community-1" in {c.id for c in result.candidates}
+
+
+class _FakeSearchClient:
+    def __init__(self, hits):
+        self._hits = hits
+
+    def search(self, *args, **kwargs):
+        self._select = kwargs.get("select")
+        return iter(self._hits)
+
+
+def test_community_search_populates_url_from_source_urls():
+    from ragpipe.retrieval.graph_substrate import build_community_search
+
+    client = _FakeSearchClient([
+        {"id": "community-0", "title": "Compute", "summary": "Compute services",
+         "source_urls": ["https://learn.microsoft.com/azure/functions", "https://learn.microsoft.com/azure/blob"],
+         "@search.score": 0.7},
+        {"id": "community-1", "title": "Empty", "summary": "No sources", "@search.score": 0.3},
+    ])
+    com = build_community_search(client, embed_fn=lambda q: [0.1, 0.2], k=5)
+    chunks = com.search_communities("query", 5)
+    assert "source_urls" in client._select
+    # First source URL is surfaced as the chunk URL so @global is URL-scorable.
+    assert chunks[0].url == "https://learn.microsoft.com/azure/functions"
+    # A community with no source URLs degrades gracefully to an empty URL.
+    assert chunks[1].url == ""

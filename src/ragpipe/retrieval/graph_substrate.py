@@ -58,7 +58,7 @@ class _CommunitySearch:  # pragma: no cover
             search_text=query,
             vector_queries=[vq],
             top=k,
-            select=["id", "title", "summary"],
+            select=["id", "title", "summary", "source_urls"],
         )
         chunks = []
         for hit in results:
@@ -66,7 +66,7 @@ class _CommunitySearch:  # pragma: no cover
                 Chunk(
                     id=hit["id"],
                     title=hit.get("title", ""),
-                    url="",
+                    url=(hit.get("source_urls") or [""])[0],
                     content=hit.get("summary", ""),
                     score=float(hit.get("@search.score", 0.0)),
                 )

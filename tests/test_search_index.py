@@ -61,4 +61,4 @@ def test_graph_index_builders_have_expected_fields():
     rel = {f.name for f in build_relationships_index("graph-relationships", 1536).fields}
     assert {"id", "source", "target", "description", "weight"} <= rel
     com = {f.name for f in build_communities_index("graph-communities", 1536).fields}
-    assert {"id", "level", "title", "summary", "summary_vector"} <= com
+    assert {"id", "level", "title", "summary", "summary_vector", "source_urls"} <= com
