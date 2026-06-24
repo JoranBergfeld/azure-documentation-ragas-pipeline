@@ -187,6 +187,10 @@ def build_communities_index(name: str, vector_dimensions: int) -> SearchIndex:
         SearchableField(name="title", type=SearchFieldDataType.String),
         SearchableField(name="summary", type=SearchFieldDataType.String),
         _vector_field("summary_vector", vector_dimensions),
+        SimpleField(
+            name="source_urls",
+            type=SearchFieldDataType.Collection(SearchFieldDataType.String),
+        ),
     ]
     semantic = SemanticSearch(
         configurations=[

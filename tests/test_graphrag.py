@@ -78,10 +78,11 @@ def test_doc_shapers():
     assert rdocs[0]["source"] == "A" and rdocs[0]["weight"] == 5.0
     assert rdocs[0]["id"] == "rel-0"
 
-    c = Community(id=2, level=0, title="Compute", summary="A summary")
+    c = Community(id=2, level=0, title="Compute", summary="A summary", source_urls=["u1", "u2"])
     cdocs = community_documents([c], embed_batch_fn=lambda t: [[0.2]] * len(t))
     assert cdocs[0]["id"] == "community-2"
     assert cdocs[0]["summary_vector"] == [0.2]
+    assert cdocs[0]["source_urls"] == ["u1", "u2"]
 
 
 def test_graph_state_round_trips_through_disk(tmp_path):

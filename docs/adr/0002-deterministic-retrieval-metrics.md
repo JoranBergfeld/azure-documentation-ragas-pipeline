@@ -40,6 +40,15 @@ that binary URL match cannot).
   *chunk* of it. Acceptable: DRM (wrong document) is the failure mode under attack.
 - Questions whose answer genuinely spans multiple pages need a single canonical URL
   in the test set (or the loader must accept a list later).
+- **GraphRAG `@global` (community reports).** Community chunks are LLM syntheses over
+  many source chunks and originally carried an empty URL, making `hit_rate@global` /
+  `mrr@global` structurally `0.0` regardless of retrieval quality. They now carry the
+  union of their constituent members' source URLs (the first is surfaced as the chunk
+  URL, matching the entity/relationship convention), so `@global` is scored on the same
+  footing as the other stages. URL match is still a *coarse* proxy for a synthesized
+  report with no single canonical page — read a low `@global` URL score as "the report's
+  members didn't include the gold page," not as a verdict on global-search quality; the
+  graded RAGAS context metrics remain the proper yardstick there (Edge et al., 2024).
 
 ## Sources
 
@@ -48,3 +57,6 @@ that binary URL match cannot).
 - Saad-Falcon et al., *ARES: An Automated Evaluation Framework for RAG* (LLM-judge
   noise and the need for calibrated/statistical treatment) —
   https://arxiv.org/abs/2311.09476
+- Edge et al., *From Local to Global: A Graph RAG Approach to Query-Focused
+  Summarization* (community reports are syntheses over many sources, not single
+  passages) — https://arxiv.org/abs/2404.16130
