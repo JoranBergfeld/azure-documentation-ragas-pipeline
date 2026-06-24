@@ -44,6 +44,7 @@ def _graphrag(settings: Settings, ctx: SubstrateCtx) -> RetrievalSubstrate:
         community_search=com,
         adjacency=adjacency,
         rrf_k=settings.rrf_k,
+        routing=getattr(settings, "graph_query_routing", True),
     )
 
 

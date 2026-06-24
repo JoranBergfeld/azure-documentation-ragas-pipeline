@@ -12,7 +12,7 @@ breadcrumb + cached LLM situating context (SAC — visible to retrieval only, se
 (`contextual`, `baseline`, `raptor-sac`, and the three `graph-*` indexes);
 **② Query pipeline** runs a **pluggable retrieval substrate** (ADR-0012) — one of
 **9 modes**: `contextual`, `baseline`, `raptor_sac` (RAPTOR collapsed-tree over SAC
-leaves, ADR-0013), `graphrag` (flat local+global graph, ADR-0014), `combined`
+leaves, ADR-0013), `graphrag` (flat graph; the global community leg is routed by query class, ADR-0014/0018), `combined`
 (RAPTOR ⊕ GraphRAG, RRF-fused), and the four `*_agentic` wrappers (bounded
 plan→retrieve loop, ADR-0015) — then a shared tail: Azure semantic rerank → Foundry
 generator agent, with a directive RAGAS faithfulness guardrail judged by Claude
