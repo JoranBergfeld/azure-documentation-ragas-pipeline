@@ -4,7 +4,7 @@ import pytest
 import yaml
 
 from ragpipe.config import TestsetMode
-from ragpipe.eval.retrieval_metrics import normalize_url
+from ragpipe.eval.retrieval_metrics import gold_set, normalize_url
 from ragpipe.eval.testset import TestItem, _load_jsonl, load_testset, rows_to_items
 
 
@@ -63,17 +63,45 @@ def _corpus_urls() -> set[str]:
 
 
 def test_every_testset_url_is_in_the_corpus():
-    """hit_rate/mrr are meaningless if the gold URL was never ingested."""
+    """hit_rate/mrr are meaningless if a gold URL was never ingested. Items may
+    carry one gold URL or several (multi-hop / global, ADR-0018) -- check each."""
     corpus = _corpus_urls()
     items = _load_jsonl("data/testset.jsonl")
     missing = sorted(
-        {
-            it.ground_truth_context
-            for it in items
-            if normalize_url(it.ground_truth_context) not in corpus
-        }
+        {u for it in items for u in gold_set(it.ground_truth_context) if u not in corpus}
     )
     assert not missing, f"testset gold URLs not in data/corpus_sources.yaml: {missing}"
+
+
+def test_load_testset_parses_list_ground_truth_context(tmp_path):
+    p = tmp_path / "ts.jsonl"
+    p.write_text(
+        json.dumps(
+            {
+                "question": "q",
+                "ground_truth": "a",
+                "ground_truth_context": ["http://u1", "http://u2"],
+                "tags": ["multihop"],
+            }
+        )
+    )
+    items = load_testset(TestsetMode.HANDAUTHORED, handauthored_path=str(p))
+    # A list gold becomes a hashable tuple; a bare string stays a string.
+    assert items[0].ground_truth_context == ("http://u1", "http://u2")
+    assert items[0].tags == ("multihop",)
+
+
+def test_testset_has_synthesis_cohorts():
+    """The multi-hop and global/sensemaking cohorts (ADR-0018) exist and each of
+    their items carries a list of >=2 gold URLs."""
+    items = _load_jsonl("data/testset.jsonl")
+    tags = [t for it in items for t in it.tags]
+    assert tags.count("multihop") >= 5
+    assert tags.count("global") >= 5
+    for it in items:
+        if {"multihop", "global"} & set(it.tags):
+            assert isinstance(it.ground_truth_context, tuple)
+            assert len(it.ground_truth_context) >= 2
 
 
 def test_testset_has_hard_subsets():

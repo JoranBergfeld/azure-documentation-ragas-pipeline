@@ -48,3 +48,12 @@ that binary URL match cannot).
 - Saad-Falcon et al., *ARES: An Automated Evaluation Framework for RAG* (LLM-judge
   noise and the need for calibrated/statistical treatment) —
   https://arxiv.org/abs/2311.09476
+
+## Addendum (2026-06-24)
+
+ADR-0018 realizes the multi-page case flagged above: `ground_truth_context` may now
+be a **list of gold URLs**, and `hit_rate` is redefined as **recall over the gold
+set** (fraction of gold URLs retrieved). For the single-URL items here this is the
+original binary 1.0/0.0, so these metrics and their committed scores are unchanged;
+multi-hop / global items get graded recall. Gold-less items emit no deterministic
+keys and are scored by RAGAS only.

@@ -19,7 +19,12 @@ generator agent, with a directive RAGAS faithfulness guardrail judged by Claude
 (ADR-0009) that widens the rerank window and regenerates on weak grounding, and
 abstains when retries exhaust; **③ Evaluation** replays every mode over a tagged test
 set and scores deterministic per-stage retrieval metrics (hit rate / MRR) plus the
-RAGAS suite, comparing modes head-to-head against a frozen baseline (ADR-0016).
+RAGAS suite, comparing modes head-to-head against a frozen baseline (ADR-0016). The
+test set is mostly single-hop factoid items but also carries multi-hop and global
+sensemaking cohorts whose gold label is a *set* of pages, so the synthesis-oriented
+substrates (GraphRAG global, RAPTOR summaries) are measured on the workload they
+target, not factoids alone (ADR-0018). On those cohorts hit rate is recall over the
+gold set; on single-gold items it stays the original binary hit (unchanged).
 
 Per-phase deep dives: [① Ingest](docs/pipeline-ingest.svg) ·
 [② Query pipeline](docs/pipeline-query.svg) · [③ Evaluation](docs/pipeline-eval.svg). (Source: [`docs/pipeline.svg`](docs/pipeline.svg); the live
