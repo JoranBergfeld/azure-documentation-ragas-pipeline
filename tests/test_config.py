@@ -44,6 +44,7 @@ def _base_env(monkeypatch):
     monkeypatch.delenv("MAX_RETRIES", raising=False)
     monkeypatch.delenv("JUDGE_MODEL", raising=False)
     monkeypatch.delenv("OFFLINE_JUDGE_MODEL", raising=False)
+    monkeypatch.delenv("GRAPH_QUERY_ROUTING", raising=False)
 
 
 def test_judge_models_parsed_from_env(monkeypatch):
@@ -98,3 +99,16 @@ def test_settings_has_no_default_mode_field():
 
     names = {f.name for f in dataclasses.fields(Settings)}
     assert "default_mode" not in names
+
+
+def test_graph_query_routing_defaults_true(monkeypatch):
+    _base_env(monkeypatch)
+    s = Settings.from_env(load=False)
+    assert s.graph_query_routing is True
+
+
+def test_graph_query_routing_disabled_from_env(monkeypatch):
+    _base_env(monkeypatch)
+    monkeypatch.setenv("GRAPH_QUERY_ROUTING", "false")
+    s = Settings.from_env(load=False)
+    assert s.graph_query_routing is False

@@ -66,6 +66,11 @@ class Settings:
     graph_entities_index: str = "graph-entities"
     graph_relationships_index: str = "graph-relationships"
     graph_communities_index: str = "graph-communities"
+    # Route GraphRAG's global community-summary leg by query class instead of
+    # always RRF-fusing it (issue #8, ADR-0018). When True, the global leg fires
+    # only for sensemaking/breadth queries; factoid queries stay local-only. Set
+    # False to restore the legacy always-fuse behavior for A/B evaluation.
+    graph_query_routing: bool = True
     # Bounds for later phases (declared now so config is stable).
     agentic_max_iterations: int = 3
     raptor_max_levels: int = 3
@@ -112,6 +117,8 @@ class Settings:
             graph_entities_index=os.environ.get("GRAPH_ENTITIES_INDEX", "graph-entities"),
             graph_relationships_index=os.environ.get("GRAPH_RELATIONSHIPS_INDEX", "graph-relationships"),
             graph_communities_index=os.environ.get("GRAPH_COMMUNITIES_INDEX", "graph-communities"),
+            graph_query_routing=os.environ.get("GRAPH_QUERY_ROUTING", "true").lower()
+            in ("1", "true", "yes"),
             agentic_max_iterations=int(os.environ.get("AGENTIC_MAX_ITERATIONS", "3")),
             raptor_max_levels=int(os.environ.get("RAPTOR_MAX_LEVELS", "3")),
             graph_community_levels=int(os.environ.get("GRAPH_COMMUNITY_LEVELS", "1")),
