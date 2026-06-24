@@ -8,7 +8,11 @@ dependencies = [
     "azure-search-documents>=11.5.0",
     "azure-ai-projects>=2.0.0",
     "azure-identity",
-    "ragas",
+    # Pinned exact: RAGAS metric prompts/APIs change across versions and legacy
+    # metrics are slated for removal by v1.0, so an unpinned judge silently
+    # re-anchors every faithfulness score. Bump deliberately + recalibrate the
+    # gate threshold and re-baseline the canary in the same change (ADR-0018).
+    "ragas==0.4.3",
     "langchain-openai",
     "streamlit",
     "pyyaml",

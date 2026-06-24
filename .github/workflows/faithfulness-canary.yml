@@ -1,0 +1,65 @@
+name: faithfulness-canary
+
+# Re-score the frozen faithfulness canary (data/faithfulness_canary.jsonl) with
+# both judge families on a schedule and fail if either drifts (ADR-0018). LLM
+# judges silently re-anchor when Azure rolls a model build, a deployment id is
+# repointed, or RAGAS changes a metric prompt; this turns that into a red run.
+#
+# Disabled until set up: this job needs Azure access, so it only runs when the
+# repository variable CANARY_ENABLED is "true" and the AZURE_* secrets +
+# FOUNDRY/SEARCH vars below are configured. Without them it is a no-op (forks stay
+# green).
+on:
+  schedule:
+    # Mondays 06:00 UTC — weekly is enough to catch a judge build roll without
+    # burning marketplace-billed judge tokens daily.
+    - cron: "0 6 * * 1"
+  workflow_dispatch:
+
+concurrency:
+  group: faithfulness-canary
+  cancel-in-progress: false
+
+jobs:
+  canary:
+    name: re-score faithfulness canary
+    runs-on: ubuntu-latest
+    if: ${{ vars.CANARY_ENABLED == 'true' }}
+    permissions:
+      contents: read
+      id-token: write # OIDC federated login to Azure (DefaultAzureCredential).
+    env:
+      FOUNDRY_PROJECT_ENDPOINT: ${{ vars.FOUNDRY_PROJECT_ENDPOINT }}
+      FOUNDRY_CHAT_MODEL: ${{ vars.FOUNDRY_CHAT_MODEL }}
+      FOUNDRY_EMBEDDING_MODEL: ${{ vars.FOUNDRY_EMBEDDING_MODEL }}
+      SEARCH_ENDPOINT: ${{ vars.SEARCH_ENDPOINT }}
+      SEARCH_INDEX: ${{ vars.SEARCH_INDEX }}
+      GENERATOR_AGENT_NAME: ${{ vars.GENERATOR_AGENT_NAME }}
+      GENERATOR_AGENT_VERSION: ${{ vars.GENERATOR_AGENT_VERSION }}
+      JUDGE_MODEL: ${{ vars.JUDGE_MODEL }}
+      OFFLINE_JUDGE_MODEL: ${{ vars.OFFLINE_JUDGE_MODEL }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          enable-cache: true
+
+      - name: Log in to Azure (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Run faithfulness canary
+        run: uv run python scripts/faithfulness_canary.py
+
+      - name: Upload canary report
+        if: always() # keep the report even when the run fails on detected drift.
+        uses: actions/upload-artifact@v4
+        with:
+          name: faithfulness-canary-report
+          path: faithfulness_canary_report.json
+          if-no-files-found: ignore

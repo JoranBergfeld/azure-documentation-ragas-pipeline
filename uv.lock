@@ -4146,7 +4146,7 @@ requires-dist = [
     { name = "markdownify", specifier = ">=1.2.2" },
     { name = "python-dotenv" },
     { name = "pyyaml" },
-    { name = "ragas" },
+    { name = "ragas", specifier = "==0.4.3" },
     { name = "rapidfuzz" },
     { name = "scikit-learn", specifier = ">=1.5" },
     { name = "streamlit" },
