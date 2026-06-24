@@ -27,6 +27,23 @@ class RetrievalMode(str, Enum):
     COMBINED_AGENTIC = "combined_agentic"
 
 
+# The four agentic wrapper modes have no eval coverage (there is no committed
+# eval_results_*_agentic.json) so they are exposed as experimental/unevaluated until an
+# eval run scores them (issue #11, ADR-0018). The set is derived structurally -- every
+# "*_agentic" wrapper -- so any future wrapper is experimental by default until it earns
+# committed eval evidence.
+EXPERIMENTAL_MODES: frozenset[RetrievalMode] = frozenset(
+    m for m in RetrievalMode if m.value.endswith("_agentic")
+)
+
+
+def is_experimental_mode(mode: "RetrievalMode | str") -> bool:
+    """True for retrieval modes exposed without eval coverage (the ``*_agentic``
+    wrappers). Accepts a ``RetrievalMode`` or its string value."""
+    value = mode.value if isinstance(mode, RetrievalMode) else str(mode)
+    return any(value == m.value for m in EXPERIMENTAL_MODES)
+
+
 def _require(name: str) -> str:
     value = os.environ.get(name)
     if not value:
@@ -66,6 +83,11 @@ class Settings:
     graph_entities_index: str = "graph-entities"
     graph_relationships_index: str = "graph-relationships"
     graph_communities_index: str = "graph-communities"
+    # Route GraphRAG's global community-summary leg by query class instead of
+    # always RRF-fusing it (issue #8, ADR-0018). When True, the global leg fires
+    # only for sensemaking/breadth queries; factoid queries stay local-only. Set
+    # False to restore the legacy always-fuse behavior for A/B evaluation.
+    graph_query_routing: bool = True
     # Bounds for later phases (declared now so config is stable).
     agentic_max_iterations: int = 3
     raptor_max_levels: int = 3
@@ -112,6 +134,8 @@ class Settings:
             graph_entities_index=os.environ.get("GRAPH_ENTITIES_INDEX", "graph-entities"),
             graph_relationships_index=os.environ.get("GRAPH_RELATIONSHIPS_INDEX", "graph-relationships"),
             graph_communities_index=os.environ.get("GRAPH_COMMUNITIES_INDEX", "graph-communities"),
+            graph_query_routing=os.environ.get("GRAPH_QUERY_ROUTING", "true").lower()
+            in ("1", "true", "yes"),
             agentic_max_iterations=int(os.environ.get("AGENTIC_MAX_ITERATIONS", "3")),
             raptor_max_levels=int(os.environ.get("RAPTOR_MAX_LEVELS", "3")),
             graph_community_levels=int(os.environ.get("GRAPH_COMMUNITY_LEVELS", "1")),

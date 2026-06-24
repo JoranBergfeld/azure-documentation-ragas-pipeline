@@ -719,7 +719,19 @@ def build_graph(
             if len(lines) > 1
             else "; ".join(e.description[:80] for e in members[:5])
         )
-        return Community(id=cid, level=0, title=title, summary=summary)
+        # Union the constituent members' (and their edges') source URLs so the
+        # deterministic URL-match metric can score the @global stage instead of
+        # treating an empty-URL community as a structural 0.0 (ADR-0002).
+        source_urls: list[str] = []
+        for e in members:
+            for u in e.source_urls:
+                if u and u not in source_urls:
+                    source_urls.append(u)
+        for r in rel_groups.get(cid, []):
+            for u in r.source_urls:
+                if u and u not in source_urls:
+                    source_urls.append(u)
+        return Community(id=cid, level=0, title=title, summary=summary, source_urls=source_urls)
 
     # Community reports are independent LLM calls; fan them out over the same
     # pool as extraction (1000+ communities done serially would dominate the

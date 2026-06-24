@@ -64,7 +64,7 @@ def _corpus_urls() -> set[str]:
 
 def test_every_testset_url_is_in_the_corpus():
     """hit_rate/mrr are meaningless if a gold URL was never ingested. Items may
-    carry one gold URL or several (multi-hop / global, ADR-0018) -- check each."""
+    carry one gold URL or several (multi-hop / global, ADR-0019) -- check each."""
     corpus = _corpus_urls()
     items = _load_jsonl("data/testset.jsonl")
     missing = sorted(
@@ -92,7 +92,7 @@ def test_load_testset_parses_list_ground_truth_context(tmp_path):
 
 
 def test_testset_has_synthesis_cohorts():
-    """The multi-hop and global/sensemaking cohorts (ADR-0018) exist and each of
+    """The multi-hop and global/sensemaking cohorts (ADR-0019) exist and each of
     their items carries a list of >=2 gold URLs."""
     items = _load_jsonl("data/testset.jsonl")
     tags = [t for it in items for t in it.tags]

@@ -1,10 +1,10 @@
-"""Deterministic, LLM-free retrieval metrics (ADR-0002, ADR-0018).
+"""Deterministic, LLM-free retrieval metrics (ADR-0002, ADR-0019).
 
 Judged by URL match: every test item carries one or more ground-truth source URLs
 and every indexed chunk carries its page URL. Exact, reproducible, and free, unlike
 the LLM-judged context metrics (which remain as a complement).
 
-The gold label is a set of one or more URLs (ADR-0018): single-hop factoid items
+The gold label is a set of one or more URLs (ADR-0019): single-hop factoid items
 carry one URL; multi-hop and global/sensemaking items carry several. ``hit_rate`` is
 recall over that set -- for a single gold URL it is the original binary 1.0/0.0, so
 the existing factoid items and their committed scores are unchanged.
@@ -32,7 +32,7 @@ def normalize_url(url: str) -> str:
 def gold_set(ground_truth: str | Iterable[str]) -> set[str]:
     """Normalized set of gold URLs from a single URL or a list of them.
 
-    Accepts the two shapes ``TestItem.ground_truth_context`` can take (ADR-0018):
+    Accepts the two shapes ``TestItem.ground_truth_context`` can take (ADR-0019):
     a ``str`` (single-hop factoid) or an iterable of ``str`` (multi-hop / global).
     Empty/blank entries are dropped, so a gold-less item yields an empty set and
     contributes to RAGAS metrics only (ADR-0016).
@@ -46,7 +46,7 @@ def hit_rate(urls: list[str], ground_truth: str | Iterable[str]) -> float:
 
     With one gold URL this is the original binary 1.0/0.0 (any chunk matches). With
     several (multi-hop / global), partial credit reflects how much of the required
-    page set was retrieved -- the headroom single-gold hit-rate lacks (ADR-0018).
+    page set was retrieved -- the headroom single-gold hit-rate lacks (ADR-0019).
 
     URLs are compared verbatim -- pass both sides through ``normalize_url`` first
     (``stage_retrieval_metrics`` does this for you).
@@ -78,7 +78,7 @@ def stage_retrieval_metrics(
 ) -> dict[str, float]:
     """hit_rate/mrr per stage, keyed 'hit_rate@<stage>' / 'mrr@<stage>'.
 
-    ``ground_truth`` is one gold URL or a list of them (ADR-0018). A gold-less item
+    ``ground_truth`` is one gold URL or a list of them (ADR-0019). A gold-less item
     yields no deterministic keys at all -- it is scored by RAGAS only (ADR-0016).
     """
     gold = gold_set(ground_truth)

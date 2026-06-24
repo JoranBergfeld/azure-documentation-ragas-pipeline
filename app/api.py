@@ -14,7 +14,8 @@ from app.dashboard import (
     per_stage_chart_data,
     stage_chunk_tables,
 )
-from ragpipe.config import RetrievalMode, Settings
+from ragpipe.config import RetrievalMode, Settings, is_experimental_mode
+from ragpipe.retrieval.registry import registered_modes
 from ragpipe.models import PipelineState
 from ragpipe.streaming import pipeline_event_stream
 
@@ -48,6 +49,7 @@ class CompareRequest(BaseModel):
 def _state_payload(mode: str, state: PipelineState) -> dict[str, Any]:
     return {
         "mode": mode,
+        "experimental": is_experimental_mode(mode),
         "query": state.query,
         "answer": state.answer,
         "faithfulness": state.faithfulness,
@@ -65,6 +67,20 @@ def _sse(event: str, data: dict) -> str:
 @app.get("/health")
 def health() -> dict[str, str]:
     return {"status": "ok"}
+
+
+@app.get("/modes")
+def modes() -> dict[str, Any]:
+    """Discoverable contract for the runnable retrieval modes. ``experimental`` flags
+    the ``*_agentic`` wrappers, which are exposed without eval coverage (issue #11)."""
+    items = [
+        {"mode": m.value, "experimental": is_experimental_mode(m)}
+        for m in registered_modes()
+    ]
+    return {
+        "modes": items,
+        "experimental": [i["mode"] for i in items if i["experimental"]],
+    }
 
 
 @app.post("/run")
@@ -122,9 +138,13 @@ def evaluate() -> dict[str, Any]:
     results = json.loads(path.read_text())
     # New shape: multi-mode eval with means_by_mode key.
     if "means_by_mode" in results:
+        mode_results = results.get("modes", {})
         return {
             "meansByMode": results["means_by_mode"],
-            "modes": list(results.get("modes", {}).keys()),
+            "modes": list(mode_results.keys()),
+            "ci": {m: r.get("ci", {}) for m, r in mode_results.items()},
+            "baselineMode": results.get("baseline_mode"),
+            "pairedVsBaseline": results.get("paired_vs_baseline", {}),
         }
     # Old shape: single-run eval.
     overall = [

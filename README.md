@@ -12,18 +12,20 @@ breadcrumb + cached LLM situating context (SAC — visible to retrieval only, se
 (`contextual`, `baseline`, `raptor-sac`, and the three `graph-*` indexes);
 **② Query pipeline** runs a **pluggable retrieval substrate** (ADR-0012) — one of
 **9 modes**: `contextual`, `baseline`, `raptor_sac` (RAPTOR collapsed-tree over SAC
-leaves, ADR-0013), `graphrag` (flat local+global graph, ADR-0014), `combined`
+leaves, ADR-0013), `graphrag` (flat graph; the global community leg is routed by query class, ADR-0014/0018), `combined`
 (RAPTOR ⊕ GraphRAG, RRF-fused), and the four `*_agentic` wrappers (bounded
-plan→retrieve loop, ADR-0015) — then a shared tail: Azure semantic rerank → Foundry
+plan→retrieve loop, ADR-0015 — **experimental / unevaluated**, ADR-0018) — then a shared tail: Azure semantic rerank → Foundry
 generator agent, with a directive RAGAS faithfulness guardrail judged by Claude
 (ADR-0009) that widens the rerank window and regenerates on weak grounding, and
-abstains when retries exhaust; **③ Evaluation** replays every mode over a tagged test
+abstains when retries exhaust (the gate scores **grounding in the retrieved
+context, not factual correctness** — a calibrated threshold + drift canary keep it
+honest, ADR-0018); **③ Evaluation** replays every mode over a tagged test
 set and scores deterministic per-stage retrieval metrics (hit rate / MRR) plus the
 RAGAS suite, comparing modes head-to-head against a frozen baseline (ADR-0016). The
 test set is mostly single-hop factoid items but also carries multi-hop and global
 sensemaking cohorts whose gold label is a *set* of pages, so the synthesis-oriented
 substrates (GraphRAG global, RAPTOR summaries) are measured on the workload they
-target, not factoids alone (ADR-0018). On those cohorts hit rate is recall over the
+target, not factoids alone (ADR-0019). On those cohorts hit rate is recall over the
 gold set; on single-gold items it stays the original binary hit (unchanged).
 
 Per-phase deep dives: [① Ingest](docs/pipeline-ingest.svg) ·
@@ -90,9 +92,11 @@ uv run uvicorn app.api:app --host 0.0.0.0 --port 8000
 - `POST /run` `{"query": "...", "mode": "contextual"}` → answer, faithfulness, attempt,
   lowConfidence, abstained, and per-stage chunk tables (`stages` is a dynamic map —
   each substrate names its own stages; the final set is always mirrored under `reranked`).
-  `mode` is **required**; an omitted or unknown mode returns 422. Valid modes: `contextual`,
-  `baseline`, `raptor_sac`, `graphrag`, `combined`, and the agentic variants `baseline_agentic`,
-  `raptor_sac_agentic`, `graphrag_agentic`, `combined_agentic`.
+  `mode` is **required**; an omitted or unknown mode returns 422. The response includes an
+  `experimental` flag. Valid modes: `contextual`, `baseline`, `raptor_sac`, `graphrag`,
+  `combined`, and the **experimental / unevaluated** agentic variants `baseline_agentic`,
+  `raptor_sac_agentic`, `graphrag_agentic`, `combined_agentic` (no committed eval coverage
+  yet — issue #11, ADR-0018).
 - `POST /run/stream` — same body as `/run`; returns a `text/event-stream` (Server-Sent Events).
   Frames: `event: progress` (one per phase boundary — `retrieve`, `rerank`, `generate`,
   `faithfulness`, `decision`; agentic modes also emit `retrieve.plan` / `retrieve.iter` /
@@ -101,6 +105,8 @@ uv run uvicorn app.api:app --host 0.0.0.0 --port 8000
   web clients.
 - `POST /compare` `{"query": "...", "modes": ["contextual", "baseline"]}` → the same payload
   per mode under `results`.
+- `GET /modes` → the runnable retrieval modes, each with an `experimental` flag, plus an
+  `experimental` list naming the unevaluated `*_agentic` wrappers (issue #11, ADR-0018).
 - `GET /eval` → RAGAS metrics from `eval_results.json` (`overall`, `perStage`, `nRecords`).
 - `GET /health` → `{"status":"ok"}`.
 
@@ -130,11 +136,37 @@ files double as checkpoints: a re-run skips any mode whose file already exists, 
 interrupted multi-hour run resumes at the next unfinished mode. To regenerate one mode,
 delete its `eval_results_<mode>.json` and re-run.
 
+Each run also reports **bootstrap 95% confidence intervals** on every per-mode metric mean and a **paired randomization test** of each mode against the baseline (`paired_vs_baseline` in the combined `eval_results.json`, surfaced in the dashboard and `GET /eval`). The test set is small (n in the tens), so treat **overlapping intervals or `p >= 0.05` as "no measurable difference"** rather than a ranking (ADR-0018).
+
 Set `TESTSET_MODE=synthetic` in `.env` to generate the test set from the corpus instead.
 
 Before the first eval run on a new machine:
 `uv run python scripts/verify_judges.py` (smokes all three model routes + the
 decoration call before any paid run).
+
+### Faithfulness gate calibration & drift canary
+
+The online gate accepts an answer when its RAGAS-faithfulness score clears
+`FAITHFULNESS_THRESHOLD`. That score measures **grounding in the retrieved context,
+not factual correctness**, and LLM-judge faithfulness scores are uncalibrated, so
+the threshold is an operating point to be *fit*, not a magic constant (ADR-0018):
+
+```bash
+# Fit + pin the threshold from a human-labeled grounding set, tracking false-pass
+# (unfaithful answer shown) vs false-abstain (faithful answer suppressed) separately.
+# Replace the example set with real labels first; writes data/faithfulness_calibration.json.
+uv run python scripts/calibrate_threshold.py --labeled data/your_labeled_set.jsonl --max-false-pass 0.1
+
+# Re-score the frozen canary (data/faithfulness_canary.jsonl) with BOTH judge
+# families and exit non-zero on drift (label regression, cross-family divergence,
+# or a judge outage). Runs weekly via .github/workflows/faithfulness-canary.yml
+# once the CANARY_ENABLED repo variable + Azure secrets are set.
+uv run python scripts/faithfulness_canary.py
+```
+
+`ragas` is pinned (`==0.4.3`) because judge scores are not comparable across
+versions; bump it deliberately and recalibrate + re-baseline the canary in the same
+change.
 
 Generate synthetic test-item candidates from pages you name (Claude-authored,
 overlap-screened; see `docs/adr/0010`):
@@ -147,7 +179,8 @@ uv run python scripts/generate_synthetic_testset.py https://learn.microsoft.com/
 
 The committed per-mode `eval_results_<mode>.json` files render to a single comparison
 chart of the four core RAGAS metrics across the evaluated substrates (the `*_agentic`
-modes are retrieval wrappers with no standalone eval files, so they're not shown):
+wrappers are **experimental / unevaluated** — no standalone eval files yet, so they're not
+shown; see issue #11 and ADR-0018):
 
 ![RAGAS evaluation across retrieval modes](docs/eval-results.svg)
 

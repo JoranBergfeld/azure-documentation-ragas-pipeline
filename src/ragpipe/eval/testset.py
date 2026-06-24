@@ -12,10 +12,10 @@ class TestItem:
     question: str
     ground_truth: str
     # One gold URL (single-hop factoid) or a tuple of them (multi-hop / global
-    # sensemaking, ADR-0018). The deterministic URL-match metrics score recall over
+    # sensemaking, ADR-0019). The deterministic URL-match metrics score recall over
     # this set; an empty value means no gold URL, so the item is RAGAS-only.
     ground_truth_context: str | tuple[str, ...]
-    # Optional difficulty/category tags (ADR-0006, ADR-0018): 'original',
+    # Optional difficulty/category tags (ADR-0006, ADR-0019): 'original',
     # 'paraphrase', 'lookalike', 'synthetic', 'multihop', 'global'. Empty means
     # 'original'.
     tags: tuple[str, ...] = ()
@@ -30,7 +30,7 @@ def _load_jsonl(path: str) -> list[TestItem]:
                 continue
             row = json.loads(line)
             # ground_truth_context is one URL (factoid) or a list of them
-            # (multi-hop / global, ADR-0018). Preserve a bare string as-is so
+            # (multi-hop / global, ADR-0019). Preserve a bare string as-is so
             # single-gold items stay byte-identical; normalize a list to a tuple
             # (frozen-dataclass-hashable).
             gtc = row["ground_truth_context"]

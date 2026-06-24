@@ -43,7 +43,7 @@ def test_stage_retrieval_metrics_keys_and_normalization():
         "hit_rate@bm25": 0.0,
         "mrr@bm25": 0.0,
     }
-# --- multi-gold / global support (ADR-0018) ---
+# --- multi-gold / global support (ADR-0019) ---
 
 
 def test_gold_set_normalizes_dedupes_and_drops_blanks():

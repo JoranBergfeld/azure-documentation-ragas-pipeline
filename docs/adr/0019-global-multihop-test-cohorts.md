@@ -1,4 +1,4 @@
-# 0018 — Global-sensemaking and multi-hop test cohorts (multi-gold URLs)
+# 0019 — Global-sensemaking and multi-hop test cohorts (multi-gold URLs)
 
 **Status:** Accepted (2026-06-24)
 
