@@ -27,6 +27,23 @@ class RetrievalMode(str, Enum):
     COMBINED_AGENTIC = "combined_agentic"
 
 
+# The four agentic wrapper modes have no eval coverage (there is no committed
+# eval_results_*_agentic.json) so they are exposed as experimental/unevaluated until an
+# eval run scores them (issue #11, ADR-0018). The set is derived structurally -- every
+# "*_agentic" wrapper -- so any future wrapper is experimental by default until it earns
+# committed eval evidence.
+EXPERIMENTAL_MODES: frozenset[RetrievalMode] = frozenset(
+    m for m in RetrievalMode if m.value.endswith("_agentic")
+)
+
+
+def is_experimental_mode(mode: "RetrievalMode | str") -> bool:
+    """True for retrieval modes exposed without eval coverage (the ``*_agentic``
+    wrappers). Accepts a ``RetrievalMode`` or its string value."""
+    value = mode.value if isinstance(mode, RetrievalMode) else str(mode)
+    return any(value == m.value for m in EXPERIMENTAL_MODES)
+
+
 def _require(name: str) -> str:
     value = os.environ.get(name)
     if not value:
