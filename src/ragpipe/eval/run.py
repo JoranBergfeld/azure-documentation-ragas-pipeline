@@ -17,6 +17,7 @@ from ragpipe.eval.harness import (
     coverage,
     run_harness,
 )
+from ragpipe.eval.stats import mode_confidence_intervals, paired_tests_vs_baseline
 from ragpipe.eval.testset import build_synthetic_generator, load_testset
 
 
@@ -103,6 +104,7 @@ def main() -> None:  # pragma: no cover
         mode_result = _clean({
             "means": aggregate(records),
             "means_by_tag": aggregate_by_tag(records),
+            "ci": mode_confidence_intervals([r.metrics for r in records]),
             "coverage": {k: {"valid": v, "total": t} for k, (v, t) in coverage(records).items()},
             "records": [r.__dict__ for r in records],
         })
@@ -118,7 +120,20 @@ def main() -> None:  # pragma: no cover
     # each mode's `means` (aggregate_by_mode), so it rebuilds from the per-mode
     # aggregates without keeping every mode's records in memory.
     means_by_mode = {m: r["means"] for m, r in results_by_mode.items()}
-    payload = {"means_by_mode": means_by_mode, "modes": results_by_mode}
+    # Paired significance vs. the baseline mode (ADR-0018): same test set per
+    # mode means record i is the same item everywhere, so per-item metric rows
+    # line up for a paired test. Empty when the baseline mode is not in this run.
+    baseline_mode = RetrievalMode.BASELINE.value
+    rows_by_mode = {
+        m: [rec["metrics"] for rec in r.get("records", [])]
+        for m, r in results_by_mode.items()
+    }
+    payload = {
+        "means_by_mode": means_by_mode,
+        "modes": results_by_mode,
+        "baseline_mode": baseline_mode,
+        "paired_vs_baseline": paired_tests_vs_baseline(rows_by_mode, baseline_mode),
+    }
     with open("eval_results.json", "w") as f:
         json.dump(payload, f, indent=2, allow_nan=False)
 

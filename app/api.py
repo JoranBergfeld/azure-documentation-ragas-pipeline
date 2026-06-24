@@ -122,9 +122,13 @@ def evaluate() -> dict[str, Any]:
     results = json.loads(path.read_text())
     # New shape: multi-mode eval with means_by_mode key.
     if "means_by_mode" in results:
+        mode_results = results.get("modes", {})
         return {
             "meansByMode": results["means_by_mode"],
-            "modes": list(results.get("modes", {}).keys()),
+            "modes": list(mode_results.keys()),
+            "ci": {m: r.get("ci", {}) for m, r in mode_results.items()},
+            "baselineMode": results.get("baseline_mode"),
+            "pairedVsBaseline": results.get("paired_vs_baseline", {}),
         }
     # Old shape: single-run eval.
     overall = [
