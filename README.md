@@ -125,6 +125,8 @@ files double as checkpoints: a re-run skips any mode whose file already exists, 
 interrupted multi-hour run resumes at the next unfinished mode. To regenerate one mode,
 delete its `eval_results_<mode>.json` and re-run.
 
+Each run also reports **bootstrap 95% confidence intervals** on every per-mode metric mean and a **paired randomization test** of each mode against the baseline (`paired_vs_baseline` in the combined `eval_results.json`, surfaced in the dashboard and `GET /eval`). The test set is small (n in the tens), so treat **overlapping intervals or `p >= 0.05` as "no measurable difference"** rather than a ranking (ADR-0018).
+
 Set `TESTSET_MODE=synthetic` in `.env` to generate the test set from the corpus instead.
 
 Before the first eval run on a new machine:
