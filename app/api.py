@@ -14,7 +14,8 @@ from app.dashboard import (
     per_stage_chart_data,
     stage_chunk_tables,
 )
-from ragpipe.config import RetrievalMode, Settings
+from ragpipe.config import RetrievalMode, Settings, is_experimental_mode
+from ragpipe.retrieval.registry import registered_modes
 from ragpipe.models import PipelineState
 from ragpipe.streaming import pipeline_event_stream
 
@@ -48,6 +49,7 @@ class CompareRequest(BaseModel):
 def _state_payload(mode: str, state: PipelineState) -> dict[str, Any]:
     return {
         "mode": mode,
+        "experimental": is_experimental_mode(mode),
         "query": state.query,
         "answer": state.answer,
         "faithfulness": state.faithfulness,
@@ -65,6 +67,20 @@ def _sse(event: str, data: dict) -> str:
 @app.get("/health")
 def health() -> dict[str, str]:
     return {"status": "ok"}
+
+
+@app.get("/modes")
+def modes() -> dict[str, Any]:
+    """Discoverable contract for the runnable retrieval modes. ``experimental`` flags
+    the ``*_agentic`` wrappers, which are exposed without eval coverage (issue #11)."""
+    items = [
+        {"mode": m.value, "experimental": is_experimental_mode(m)}
+        for m in registered_modes()
+    ]
+    return {
+        "modes": items,
+        "experimental": [i["mode"] for i in items if i["experimental"]],
+    }
 
 
 @app.post("/run")

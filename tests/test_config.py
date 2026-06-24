@@ -112,3 +112,26 @@ def test_graph_query_routing_disabled_from_env(monkeypatch):
     monkeypatch.setenv("GRAPH_QUERY_ROUTING", "false")
     s = Settings.from_env(load=False)
     assert s.graph_query_routing is False
+
+
+def test_experimental_modes_are_the_agentic_wrappers():
+    from ragpipe.config import EXPERIMENTAL_MODES, RetrievalMode
+
+    assert {m.value for m in EXPERIMENTAL_MODES} == {
+        "baseline_agentic",
+        "raptor_sac_agentic",
+        "graphrag_agentic",
+        "combined_agentic",
+    }
+    # every experimental mode is a real, registry-eligible RetrievalMode
+    assert EXPERIMENTAL_MODES <= set(RetrievalMode)
+
+
+def test_is_experimental_mode_accepts_enum_and_str():
+    from ragpipe.config import RetrievalMode, is_experimental_mode
+
+    assert is_experimental_mode(RetrievalMode.COMBINED_AGENTIC) is True
+    assert is_experimental_mode("baseline_agentic") is True
+    assert is_experimental_mode(RetrievalMode.CONTEXTUAL) is False
+    assert is_experimental_mode("contextual") is False
+    assert is_experimental_mode("not-a-mode") is False

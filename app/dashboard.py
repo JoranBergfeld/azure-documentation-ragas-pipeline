@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 from typing import Any
 
+from ragpipe.config import is_experimental_mode
 from ragpipe.models import PipelineState
 from ragpipe.retrieval.registry import registered_modes
 
@@ -219,6 +220,13 @@ def main() -> None:  # pragma: no cover - UI entry point
             help="Which substrate/index answers the query. *_agentic modes run "
             "multiple retrieval rounds and are slower.",
         )
+        if is_experimental_mode(mode):
+            st.warning(
+                f"`{mode}` is **experimental / unevaluated** — the agentic wrapper "
+                "modes have no committed eval coverage yet (issue #11). Treat their "
+                "answers as a preview, not a benchmarked result.",
+                icon="⚠️",
+            )
         if st.button("Run", key="run_query") and query:
             from ragpipe.app_wiring import build_pipeline_fn
 
