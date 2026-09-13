@@ -320,7 +320,7 @@ def build_raptor(settings: Any, limit: int | None = None) -> None:  # pragma: no
 
     from ragpipe.context_gen import ContextGenerator, build_context_complete_fn
     from ragpipe.embeddings import build_batch_embed_fn
-    from ragpipe.raptor import RaptorNode, build_raptor_tree
+    from ragpipe.raptor import RaptorNode, build_raptor_tree, pack_passages
     from ragpipe.search_index import build_index
 
     with open("data/corpus_sources.yaml") as f:
@@ -363,7 +363,7 @@ def build_raptor(settings: Any, limit: int | None = None) -> None:  # pragma: no
     )
 
     def summarize_fn(texts: list[str]) -> str:
-        joined = "\n\n---\n\n".join(texts)
+        joined = "\n\n---\n\n".join(pack_passages(texts))
         prompt = SUMMARY_PROMPT.format(passages=joined)
         for attempt in range(settings.max_retries + 1):
             try:
