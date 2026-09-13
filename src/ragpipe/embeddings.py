@@ -105,10 +105,20 @@ def build_embed_fn(
     return embed
 
 
+# Per-input character ceiling. text-embedding-3 rejects any input over 8192
+# tokens with a 400 that fails the whole batch. Merged GraphRAG entity
+# descriptions grow without bound (a hub entity like AZURE unions descriptions
+# from thousands of chunks; the largest reached ~50k chars). 16k chars stays
+# under 8192 tokens even at ~2 chars/token, and the leading descriptions carry
+# the entity's meaning. Only the embedding input is clipped, never stored text.
+EMBED_INPUT_CHAR_LIMIT = 16_000
+
+
 def _embed_in_chunks(
     embed_one: Callable[[list[str]], list[list[float]]],
     texts: list[str],
     max_inputs: int,
+    max_chars: int = EMBED_INPUT_CHAR_LIMIT,
 ) -> list[list[float]]:
     """Embed ``texts`` by splitting into ``<= max_inputs`` sub-batches, in order.
 
@@ -116,11 +126,13 @@ def _embed_in_chunks(
     the deployment's tokens-per-minute limit -- passing every entity/relationship
     description at once (tens of thousands of inputs, >1M tokens) guarantees a 429
     that no retry budget can clear. Chunking keeps each request small; results are
-    concatenated in input order.
+    concatenated in input order. Each input is clipped to ``max_chars`` so one
+    oversized text cannot 400 its whole sub-batch.
     """
+    clipped = [t[:max_chars] for t in texts]
     vectors: list[list[float]] = []
-    for start in range(0, len(texts), max_inputs):
-        vectors.extend(embed_one(texts[start : start + max_inputs]))
+    for start in range(0, len(clipped), max_inputs):
+        vectors.extend(embed_one(clipped[start : start + max_inputs]))
     return vectors
 
 

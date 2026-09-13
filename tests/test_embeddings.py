@@ -73,3 +73,14 @@ def test_embed_in_chunks_handles_empty_and_exact_multiples():
     out = _embed_in_chunks(embed_one, ["x"] * 10, max_inputs=5)
     assert sizes == [5, 5]
     assert len(out) == 10
+
+
+def test_embed_in_chunks_clips_oversized_inputs_only():
+    seen: list[str] = []
+
+    def embed_one(sub):
+        seen.extend(sub)
+        return [[0.0] for _ in sub]
+
+    _embed_in_chunks(embed_one, ["x" * 50, "short"], max_inputs=5, max_chars=10)
+    assert seen == ["x" * 10, "short"]
