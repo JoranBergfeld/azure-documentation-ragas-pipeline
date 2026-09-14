@@ -7,6 +7,34 @@ import numpy as np
 from sklearn.decomposition import PCA
 from sklearn.mixture import GaussianMixture
 
+# Character budget for one summary prompt's passages. A cluster over a
+# full-corpus ingest can hold hundreds of chunks: joined whole, the two largest
+# came to ~172k tokens against gpt-4o's 128k window, failed every attempt and
+# fell back to a 500-char slice. 250k chars stays under 128k tokens even at a
+# code-heavy ~2.5 chars/token, with room left for the prompt and the reply.
+SUMMARY_PASSAGE_CHAR_BUDGET = 250_000
+
+
+def pack_passages(texts: list[str], max_chars: int = SUMMARY_PASSAGE_CHAR_BUDGET) -> list[str]:
+    """Longest prefix of ``texts`` that fits ``max_chars`` (separators counted).
+
+    Always returns at least one passage — truncated if it alone is over budget —
+    so a summary is never asked of nothing. Cluster members are already
+    semantically grouped, so a prefix is a representative sample of the cluster.
+    """
+    sep = len("\n\n---\n\n")
+    packed: list[str] = []
+    used = 0
+    for text in texts:
+        cost = len(text) + (sep if packed else 0)
+        if used + cost > max_chars:
+            if not packed:
+                packed.append(text[:max_chars])
+            break
+        packed.append(text)
+        used += cost
+    return packed
+
 
 def cluster_embeddings(
     vectors: list[list[float]],
