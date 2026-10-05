@@ -6,7 +6,7 @@
 #     uv run uvicorn app.api:app --host 0.0.0.0 --port 8000
 #
 # Built and pushed to GHCR by .github/workflows/publish-image.yml.
-FROM python:3.11-slim
+FROM python:3.14-slim
 
 # uv ships as a static binary in its own published image; copy it in rather
 # than pip-installing it. Pinned to the 0.11 line we develop against.
