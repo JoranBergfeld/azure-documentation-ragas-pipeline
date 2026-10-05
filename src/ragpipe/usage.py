@@ -1,4 +1,4 @@
-"""Per-run usage of every metered call (ADR-0018).
+"""Per-run usage of every metered call (ADR-0020).
 
 A run reports what it consumed so the caller can price it as usage times a
 dated rate keyed by deployment. This module holds no prices.

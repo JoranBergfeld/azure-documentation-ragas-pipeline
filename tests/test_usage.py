@@ -1,4 +1,4 @@
-"""Per-run usage reporting (ADR-0018). Model clients are stubbed; no live calls."""
+"""Per-run usage reporting (ADR-0020). Model clients are stubbed; no live calls."""
 from __future__ import annotations
 
 import asyncio

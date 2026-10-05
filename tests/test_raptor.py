@@ -54,3 +54,24 @@ def test_build_tree_produces_higher_level_nodes_and_terminates():
     assert all(s.level >= 1 for s in summaries)
     assert len(summaries) < len(leaves) * 3
     assert any(s.text.startswith("summary:") for s in summaries)
+
+
+def test_pack_passages_keeps_everything_under_budget():
+    from ragpipe.raptor import pack_passages
+
+    assert pack_passages(["aa", "bb"], max_chars=100) == ["aa", "bb"]
+
+
+def test_pack_passages_stops_before_overflowing_budget():
+    from ragpipe.raptor import pack_passages
+
+    # "aaaa" + separator (7) + "bbbb" = 15 chars; a third passage would overflow.
+    packed = pack_passages(["aaaa", "bbbb", "cccc"], max_chars=15)
+    assert packed == ["aaaa", "bbbb"]
+    assert len("\n\n---\n\n".join(packed)) <= 15
+
+
+def test_pack_passages_truncates_a_lone_oversized_passage():
+    from ragpipe.raptor import pack_passages
+
+    assert pack_passages(["x" * 50, "y"], max_chars=10) == ["x" * 10]

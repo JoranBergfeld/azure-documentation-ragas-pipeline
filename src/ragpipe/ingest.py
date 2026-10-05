@@ -320,7 +320,7 @@ def build_raptor(settings: Any, limit: int | None = None) -> None:  # pragma: no
 
     from ragpipe.context_gen import ContextGenerator, build_context_complete_fn
     from ragpipe.embeddings import build_batch_embed_fn
-    from ragpipe.raptor import RaptorNode, build_raptor_tree
+    from ragpipe.raptor import RaptorNode, build_raptor_tree, pack_passages
     from ragpipe.search_index import build_index
 
     with open("data/corpus_sources.yaml") as f:
@@ -363,7 +363,7 @@ def build_raptor(settings: Any, limit: int | None = None) -> None:  # pragma: no
     )
 
     def summarize_fn(texts: list[str]) -> str:
-        joined = "\n\n---\n\n".join(texts)
+        joined = "\n\n---\n\n".join(pack_passages(texts))
         prompt = SUMMARY_PROMPT.format(passages=joined)
         for attempt in range(settings.max_retries + 1):
             try:
@@ -719,7 +719,19 @@ def build_graph(
             if len(lines) > 1
             else "; ".join(e.description[:80] for e in members[:5])
         )
-        return Community(id=cid, level=0, title=title, summary=summary)
+        # Union the constituent members' (and their edges') source URLs so the
+        # deterministic URL-match metric can score the @global stage instead of
+        # treating an empty-URL community as a structural 0.0 (ADR-0002).
+        source_urls: list[str] = []
+        for e in members:
+            for u in e.source_urls:
+                if u and u not in source_urls:
+                    source_urls.append(u)
+        for r in rel_groups.get(cid, []):
+            for u in r.source_urls:
+                if u and u not in source_urls:
+                    source_urls.append(u)
+        return Community(id=cid, level=0, title=title, summary=summary, source_urls=source_urls)
 
     # Community reports are independent LLM calls; fan them out over the same
     # pool as extraction (1000+ communities done serially would dominate the

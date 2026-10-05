@@ -61,3 +61,41 @@ def test_aggregate_unchanged_for_plain_metrics():
     r = EvalRecord(question="q", answer="a", contexts=[], ground_truth="g",
                    metrics={"m": 0.5})
     assert aggregate([r]) == {"m": 0.5}
+def test_run_harness_scores_recall_for_multi_gold_items():
+    items = [
+        TestItem(
+            question="q",
+            ground_truth="a",
+            ground_truth_context=(
+                "https://learn.microsoft.com/en-us/azure/right",
+                "https://learn.microsoft.com/azure/wrong",
+            ),
+            tags=("multihop",),
+        )
+    ]
+
+    async def pipeline_fn(q):
+        return _state(q)
+
+    async def evaluator_fn(records):
+        return records
+
+    r = asyncio.run(run_harness(items, pipeline_fn, evaluator_fn))[0]
+    # dense holds only the 'right' page (1 of 2 gold) -> recall 0.5; reranked both.
+    assert r.metrics["hit_rate@dense"] == 0.5
+    assert r.metrics["hit_rate@reranked"] == 1.0
+    assert r.metrics["mrr@reranked"] == 1.0
+
+
+def test_run_harness_skips_deterministic_metrics_for_goldless_items():
+    items = [TestItem(question="q", ground_truth="a", ground_truth_context="")]
+
+    async def pipeline_fn(q):
+        return _state(q)
+
+    async def evaluator_fn(records):
+        return records
+
+    r = asyncio.run(run_harness(items, pipeline_fn, evaluator_fn))[0]
+    assert not any(k.startswith(("hit_rate@", "mrr@")) for k in r.metrics)
+    assert r.metrics["abstained"] == 0.0

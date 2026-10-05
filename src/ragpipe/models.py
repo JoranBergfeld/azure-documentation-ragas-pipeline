@@ -40,7 +40,7 @@ class PipelineState:
     # answer survives in the trace only.
     abstained: bool = False
     trace: list[TraceEvent] = field(default_factory=list)
-    # One entry per metered call this run made, in call order (ADR-0018).
+    # One entry per metered call this run made, in call order (ADR-0020).
     # Empty when the run made no paid call.
     usage: list[UsageEntry] = field(default_factory=list)
 

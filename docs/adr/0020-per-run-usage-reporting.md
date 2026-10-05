@@ -1,4 +1,4 @@
-# 0018 — Per-run usage reporting
+# 0020 — Per-run usage reporting
 
 **Status:** Accepted (2026-10-05)
 

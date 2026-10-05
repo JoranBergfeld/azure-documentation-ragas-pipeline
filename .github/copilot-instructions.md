@@ -72,7 +72,7 @@ required** everywhere — an omitted/unknown mode returns HTTP 422; there is no 
   For judges on the OpenAI-compatible Foundry route, build `AzureChatOpenAI(model=<deployment>)`
   (a null model 400s on the sglang-backed deployments). Every live LLM/judge client is built
   with explicit `timeout` + `max_retries` (shared `JUDGE_TIMEOUT`/`JUDGE_MAX_RETRIES`).
-- **Usage reporting (ADR-0018):** every metered call records a `UsageEntry` through
+- **Usage reporting (ADR-0020):** every metered call records a `UsageEntry` through
   `ragpipe.usage.record_*` at the point the provider response is in hand; `run_pipeline`
   collects them into `PipelineState.usage`. A new paid call needs its own `record_*` line.
   Usage only, no prices.

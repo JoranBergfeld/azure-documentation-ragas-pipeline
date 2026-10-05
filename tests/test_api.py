@@ -231,7 +231,7 @@ def test_run_stream_emits_error_frame_on_failure():
     assert "RuntimeError" in res.text
 
 
-# --- usage reporting (ADR-0018) ---
+# --- usage reporting (ADR-0020) ---
 
 
 def _post_run(state: PipelineState, mode: str = "contextual") -> dict:
@@ -322,7 +322,7 @@ def test_run_usage_is_additive_to_the_existing_payload():
     body = _post_run(_state())
     assert set(body) == {
         "mode", "query", "answer", "faithfulness", "attempt",
-        "lowConfidence", "abstained", "stages", "usage",
+        "lowConfidence", "abstained", "stages", "usage", "experimental",
     }
 
 
@@ -411,3 +411,52 @@ def test_compare_reports_usage_per_mode():
         api.app.dependency_overrides.clear()
 
     assert all(len(r["usage"]) == 3 for r in resp.json()["results"])
+
+
+# --- issue #11: experimental flag for the unevaluated *_agentic modes ---
+
+
+def test_run_payload_marks_evaluated_mode_not_experimental():
+    async def fake_pipeline(q: str) -> PipelineState:
+        return _fake_state("contextual")
+
+    api.app.dependency_overrides[api.get_pipeline_fn_for_mode] = _make_factory(fake_pipeline)
+    try:
+        resp = TestClient(api.app).post("/run", json={"query": "q", "mode": "contextual"})
+    finally:
+        api.app.dependency_overrides.clear()
+
+    assert resp.status_code == 200
+    assert resp.json()["experimental"] is False
+
+
+def test_run_payload_marks_agentic_mode_experimental():
+    async def fake_pipeline(q: str) -> PipelineState:
+        return _fake_state("combined_agentic")
+
+    api.app.dependency_overrides[api.get_pipeline_fn_for_mode] = _make_factory(fake_pipeline)
+    try:
+        resp = TestClient(api.app).post("/run", json={"query": "q", "mode": "combined_agentic"})
+    finally:
+        api.app.dependency_overrides.clear()
+
+    assert resp.status_code == 200
+    assert resp.json()["experimental"] is True
+
+
+def test_modes_lists_all_modes_with_experimental_flags(client):
+    res = client.get("/modes")
+    assert res.status_code == 200
+    body = res.json()
+    by_mode = {item["mode"]: item["experimental"] for item in body["modes"]}
+    # all 9 registry modes are present
+    assert len(by_mode) == 9
+    assert by_mode["contextual"] is False
+    assert by_mode["combined_agentic"] is True
+    # the experimental list names exactly the four agentic wrappers
+    assert set(body["experimental"]) == {
+        "baseline_agentic",
+        "raptor_sac_agentic",
+        "graphrag_agentic",
+        "combined_agentic",
+    }

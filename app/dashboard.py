@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 from typing import Any
 
+from ragpipe.config import is_experimental_mode
 from ragpipe.models import PipelineState
 from ragpipe.retrieval.registry import registered_modes
 
@@ -133,11 +134,15 @@ def eval_rows(results: dict[str, Any]) -> list[dict[str, Any]]:
     """
     means = results.get("means", {})
     cov = results.get("coverage", {})
+    ci = results.get("ci", {})
     rows: list[dict[str, Any]] = []
     for k, v in sorted(means.items()):
         if "@" in k:  # per-stage metric, handled elsewhere
             continue
         row = {"metric": k, "mean_score": round(v, 4)}
+        if k in ci:
+            row["ci_low"] = round(ci[k]["low"], 4)
+            row["ci_high"] = round(ci[k]["high"], 4)
         if k in cov:
             row["coverage"] = f"{cov[k]['valid']}/{cov[k]['total']}"
         rows.append(row)
@@ -215,6 +220,13 @@ def main() -> None:  # pragma: no cover - UI entry point
             help="Which substrate/index answers the query. *_agentic modes run "
             "multiple retrieval rounds and are slower.",
         )
+        if is_experimental_mode(mode):
+            st.warning(
+                f"`{mode}` is **experimental / unevaluated** — the agentic wrapper "
+                "modes have no committed eval coverage yet (issue #11). Treat their "
+                "answers as a preview, not a benchmarked result.",
+                icon="⚠️",
+            )
         if st.button("Run", key="run_query") and query:
             from ragpipe.app_wiring import build_pipeline_fn
 
@@ -287,6 +299,35 @@ def main() -> None:  # pragma: no cover - UI entry point
                     for metric in metric_names
                 }
                 st.bar_chart(pd.DataFrame(chart, index=list(means_by_mode.keys())))
+                st.caption(
+                    "Overlapping confidence intervals between modes mean **no "
+                    "measurable difference** — check the per-mode CIs (drill in "
+                    "below) before ranking modes (ADR-0018)."
+                )
+                paired = results.get("paired_vs_baseline", {})
+                if paired:
+                    base = results.get("baseline_mode")
+                    st.subheader(f"Paired significance vs. `{base}`")
+                    st.caption(
+                        "Paired randomization test on per-item differences; "
+                        "p < 0.05 marks a difference unlikely to be noise. CI is the "
+                        "95% interval on the mean per-item difference (ADR-0018)."
+                    )
+                    prows = [
+                        {
+                            "mode": mode,
+                            "metric": metric,
+                            "mean_diff": round(r["mean_diff"], 4),
+                            "ci": f"[{r['ci_low']:.3f}, {r['ci_high']:.3f}]",
+                            "p_value": round(r["p_value"], 4),
+                            "significant": r["significant"],
+                        }
+                        for mode, metrics in paired.items()
+                        for metric, r in sorted(metrics.items())
+                        if "@" not in metric
+                    ]
+                    if prows:
+                        st.table(prows)
                 mode_results = results.get("modes", {})
                 if mode_results:
                     selected = st.selectbox("Drill into mode", list(mode_results.keys()))

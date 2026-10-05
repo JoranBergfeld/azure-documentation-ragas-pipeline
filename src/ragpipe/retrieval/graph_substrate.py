@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Callable
 
 from ragpipe.models import Chunk
+from ragpipe.retrieval.query_class import QueryClass, classify_query
 from ragpipe.retrieval.rrf import reciprocal_rank_fusion
 from ragpipe.retrieval.substrate import RetrievalResult
 
@@ -57,7 +58,7 @@ class _CommunitySearch:  # pragma: no cover
             search_text=query,
             vector_queries=[vq],
             top=k,
-            select=["id", "title", "summary"],
+            select=["id", "title", "summary", "source_urls"],
         )
         chunks = []
         for hit in results:
@@ -65,7 +66,7 @@ class _CommunitySearch:  # pragma: no cover
                 Chunk(
                     id=hit["id"],
                     title=hit.get("title", ""),
-                    url="",
+                    url=(hit.get("source_urls") or [""])[0],
                     content=hit.get("summary", ""),
                     score=float(hit.get("@search.score", 0.0)),
                 )
@@ -115,17 +116,36 @@ def build_adjacency(client) -> dict[str, list[Chunk]]:  # pragma: no cover
 
 class GraphRAGSubstrate:
     """Local (entity match + 1-hop relationship expansion) + global (community
-    report ranking) search, fused by RRF. entity_search/community_search expose
+    report ranking) search. entity_search/community_search expose
     search_entities(query,k)/search_communities(query,k) -> list[Chunk]. adjacency
     maps an entity title -> its relationship Chunks (built once from the
-    relationships index at wiring time)."""
+    relationships index at wiring time).
 
-    def __init__(self, *, name, entity_search, community_search, adjacency, rrf_k=60):
+    The global leg is *routed*, not always fused (issue #8, ADR-0018): a
+    deterministic query classifier engages community summaries only for
+    sensemaking/breadth (GLOBAL) queries. Factoid/local queries retrieve from the
+    local leg alone, so the empty-URL community summaries can no longer outrank
+    and evict the precise leaf chunk under the reranker. Set ``routing=False`` to
+    restore the legacy always-fuse behavior (e.g. for A/B evaluation)."""
+
+    def __init__(
+        self,
+        *,
+        name,
+        entity_search,
+        community_search,
+        adjacency,
+        rrf_k=60,
+        routing=True,
+        classify_fn: Callable[[str], QueryClass] | None = None,
+    ):
         self.name = name
         self._entities = entity_search
         self._communities = community_search
         self._adjacency = adjacency
         self._rrf_k = rrf_k
+        self._routing = routing
+        self._classify = classify_fn or classify_query
 
     async def retrieve(self, query: str, k: int, on_event=None) -> RetrievalResult:
         seeds = self._entities.search_entities(query, k)
@@ -136,6 +156,11 @@ class GraphRAGSubstrate:
                 if rel.id not in seen:
                     expanded.append(rel)
                     seen.add(rel.id)
-        glob = self._communities.search_communities(query, k)
+        if not self._routing or self._classify(query) is QueryClass.GLOBAL:
+            glob = self._communities.search_communities(query, k)
+        else:
+            # LOCAL query: skip the global community leg entirely so its
+            # empty-URL summaries cannot evict the precise leaf chunk (issue #8).
+            glob = []
         fused = reciprocal_rank_fusion(expanded, glob, k=self._rrf_k)
         return RetrievalResult(candidates=fused, stages={"local": expanded, "global": glob, "fused": fused})

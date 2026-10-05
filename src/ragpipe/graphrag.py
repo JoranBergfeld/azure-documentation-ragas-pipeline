@@ -34,6 +34,12 @@ class Community:
     level: int
     title: str
     summary: str
+    # Union of the constituent members' source URLs. A community report is an
+    # LLM synthesis over many source chunks, so it has no single canonical page;
+    # carrying the members' URLs lets the deterministic URL-match metric score
+    # the @global stage instead of reading a structural empty-URL 0.0 as a
+    # quality verdict (ADR-0002).
+    source_urls: list[str] = field(default_factory=list)
 
 
 def _fields(record: str) -> list[str]:
@@ -193,6 +199,7 @@ def community_documents(
             "title": c.title,
             "summary": c.summary,
             "summary_vector": vecs[i],
+            "source_urls": c.source_urls,
         }
         for i, c in enumerate(communities)
     ]

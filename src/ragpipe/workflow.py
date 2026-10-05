@@ -49,7 +49,7 @@ async def run_pipeline(
     query: str, deps: PipelineDeps, *, on_event: ProgressSink | None = None
 ) -> PipelineState:
     state = PipelineState(query=query)
-    # Every metered call made below records itself into state.usage (ADR-0018).
+    # Every metered call made below records itself into state.usage (ADR-0020).
     with collect_usage(state.usage):
         return await _run(query, deps, state, on_event)
 

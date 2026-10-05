@@ -1,0 +1,16 @@
+{
+  "_comment": "Pinned calibration artifact for the online faithfulness gate (ADR-0018). The gate accepts an answer when its RAGAS-faithfulness score >= threshold (guardrail.decide_next). These judge scores are NOT comparable across RAGAS versions or judge deployments, so this file pins the versions/ids the threshold was chosen under and records the two error rates separately. Regenerate with `uv run python scripts/calibrate_threshold.py` after relabeling, bumping ragas, or repointing a judge.",
+  "status": "uncalibrated-default",
+  "threshold": 0.7,
+  "ragas_version": "0.4.3",
+  "online_judge_model_env": "JUDGE_MODEL",
+  "offline_judge_model_env": "OFFLINE_JUDGE_MODEL",
+  "calibration_set": "data/faithfulness_calibration_set.example.jsonl",
+  "n_labeled": null,
+  "false_pass_rate": null,
+  "false_abstain_rate": null,
+  "max_false_pass_rate_budget": null,
+  "youden_j": null,
+  "rationale": "Default 0.7 inherited from RAGAS conventions; NOT fit to human grounding labels. Replace `data/faithfulness_calibration_set.example.jsonl` with a real human-labeled Azure-docs set and run scripts/calibrate_threshold.py to fit and pin a calibrated threshold.",
+  "generated_at": null
+}

@@ -25,7 +25,7 @@ won't slot into the RAGAS harness without a substantial adapter.
    - `graph-relationships`: one row per edge (source entity, target entity, description,
      weight, source chunk ids).
    - `graph-communities`: one row per community (level, title, LLM summary report,
-     report embedding).
+     report embedding, and the union of its members' source URLs).
 
    Azure AI Search stores and searches the output. Python is the graph engine at build
    time. This is the same shape as Microsoft's GraphRAG solution accelerator.
@@ -81,6 +81,12 @@ won't slot into the RAGAS harness without a substantial adapter.
   the global search path still covers them via community reports.
 - Community detection uses Leiden (graspologic), which requires an extra dependency.
   The fallback on an empty or tiny graph is one trivial community covering all entities.
+- Community rows carry the union of their members' source URLs (entities and the edges
+  internal to the community). Without this the community/`@global` chunks had an empty
+  URL and `hit_rate@global` / `mrr@global` were structurally `0.0` — a measurement
+  artifact, not a quality signal (ADR-0002). The first source URL is surfaced as the
+  community chunk's `url`, matching the entity/relationship convention, so the `@global`
+  stage is URL-scorable alongside the rest.
 
 ## Sources
 
