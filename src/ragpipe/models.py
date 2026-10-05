@@ -3,6 +3,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
+from ragpipe.usage import UsageEntry
+
 
 @dataclass
 class Chunk:
@@ -38,6 +40,9 @@ class PipelineState:
     # answer survives in the trace only.
     abstained: bool = False
     trace: list[TraceEvent] = field(default_factory=list)
+    # One entry per metered call this run made, in call order (ADR-0020).
+    # Empty when the run made no paid call.
+    usage: list[UsageEntry] = field(default_factory=list)
 
     def set_stage(self, name: str, chunks: list[Chunk]) -> None:
         self.stages[name] = chunks

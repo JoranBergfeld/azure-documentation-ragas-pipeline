@@ -115,7 +115,11 @@ def _build_claude_faithfulness(settings) -> MetricFn:  # pragma: no cover - live
 
     from ragpipe.embeddings import anthropic_endpoint_from_project
     from ragpipe.foundry_judge import AI_FOUNDRY_SCOPE, JUDGE_MAX_RETRIES, JUDGE_TIMEOUT
+    from ragpipe.usage import STAGE_FAITHFULNESS_JUDGE, build_langchain_usage_callback
 
+    usage_callback = build_langchain_usage_callback(
+        STAGE_FAITHFULNESS_JUDGE, settings.judge_model
+    )
     token_provider = get_bearer_token_provider(DefaultAzureCredential(), AI_FOUNDRY_SCOPE)
     base_url = anthropic_endpoint_from_project(settings.foundry_project_endpoint)
 
@@ -132,6 +136,7 @@ def _build_claude_faithfulness(settings) -> MetricFn:  # pragma: no cover - live
             temperature=0,
             timeout=JUDGE_TIMEOUT,
             max_retries=JUDGE_MAX_RETRIES,
+            callbacks=[usage_callback],
         )
         # The anthropic SDK sends X-Api-Key alongside any custom Authorization
         # header; a gateway that validates X-Api-Key first would 401. Clearing
@@ -164,6 +169,7 @@ def _build_openai_faithfulness(settings) -> MetricFn:  # pragma: no cover - live
         services_endpoint_from_project,
     )
     from ragpipe.foundry_judge import JUDGE_MAX_RETRIES, JUDGE_TIMEOUT
+    from ragpipe.usage import STAGE_FAITHFULNESS_JUDGE, build_langchain_usage_callback
 
     token_provider = get_bearer_token_provider(
         DefaultAzureCredential(), COGNITIVE_SERVICES_SCOPE
@@ -182,6 +188,9 @@ def _build_openai_faithfulness(settings) -> MetricFn:  # pragma: no cover - live
         azure_ad_token_provider=token_provider,
         timeout=JUDGE_TIMEOUT,
         max_retries=JUDGE_MAX_RETRIES,
+        callbacks=[
+            build_langchain_usage_callback(STAGE_FAITHFULNESS_JUDGE, settings.judge_model)
+        ],
     )
     metric = Faithfulness(llm=LangchainLLMWrapper(judge_chat))
 

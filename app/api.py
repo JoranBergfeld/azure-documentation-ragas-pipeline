@@ -57,6 +57,8 @@ def _state_payload(mode: str, state: PipelineState) -> dict[str, Any]:
         "lowConfidence": state.low_confidence,
         "abstained": state.abstained,
         "stages": stage_chunk_tables(state),
+        # Every metered call the run made, in call order; [] when none (ADR-0020).
+        "usage": [entry.to_dict() for entry in state.usage],
     }
 
 

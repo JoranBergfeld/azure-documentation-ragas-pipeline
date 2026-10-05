@@ -97,6 +97,8 @@ uv run uvicorn app.api:app --host 0.0.0.0 --port 8000
   `combined`, and the **experimental / unevaluated** agentic variants `baseline_agentic`,
   `raptor_sac_agentic`, `graphrag_agentic`, `combined_agentic` (no committed eval coverage
   yet — issue #11, ADR-0018).
+  The payload also carries `usage`: one entry per metered call the run made, in call order
+  (see [Usage reporting](#usage-reporting)).
 - `POST /run/stream` — same body as `/run`; returns a `text/event-stream` (Server-Sent Events).
   Frames: `event: progress` (one per phase boundary — `retrieve`, `rerank`, `generate`,
   `faithfulness`, `decision`; agentic modes also emit `retrieve.plan` / `retrieve.iter` /
@@ -109,6 +111,43 @@ uv run uvicorn app.api:app --host 0.0.0.0 --port 8000
   `experimental` list naming the unevaluated `*_agentic` wrappers (issue #11, ADR-0018).
 - `GET /eval` → RAGAS metrics from `eval_results.json` (`overall`, `perStage`, `nRecords`).
 - `GET /health` → `{"status":"ok"}`.
+
+### Usage reporting
+
+`/run`, the `result` frame of `/run/stream`, and each entry of `/compare` carry a `usage` list
+(ADR-0020). It reports usage only, never prices: the caller prices each entry as usage times its
+own rate for that `deployment`.
+
+```json
+"usage": [
+  {"stage": "query_embedding", "deployment": "text-embedding-3-small",
+   "inputTokens": 9, "cachedInputTokens": null, "outputTokens": null,
+   "requestUnits": null, "usageMissing": false},
+  {"stage": "rerank", "deployment": "azure-ai-search-semantic-ranker",
+   "inputTokens": null, "cachedInputTokens": null, "outputTokens": null,
+   "requestUnits": 1, "usageMissing": false},
+  {"stage": "generation", "deployment": "gpt-5.4",
+   "inputTokens": 2140, "cachedInputTokens": 1024, "outputTokens": 310,
+   "requestUnits": null, "usageMissing": false},
+  {"stage": "faithfulness_judge", "deployment": "claude-sonnet-4-6",
+   "inputTokens": 1850, "cachedInputTokens": null, "outputTokens": 220,
+   "requestUnits": null, "usageMissing": false}
+]
+```
+
+- `stage` is one of `query_embedding`, `plan` (agentic modes), `rerank`, `generation`,
+  `code_interpreter`, `faithfulness_judge`.
+- Token calls fill `inputTokens` (total input, cached part included), `outputTokens`, and
+  `cachedInputTokens` when the provider reports it. Embeddings have no `outputTokens`.
+- Per-request billing fills `requestUnits` instead: one per semantic ranker query, one per code
+  interpreter session.
+- One entry per call. A guardrail retry adds its own `rerank`, `generation` and judge entries,
+  and the judge makes more than one LLM call per score.
+- `usageMissing: true` means the call was made but the provider reported no counts (or the call
+  timed out). The counts are `null`, never estimated, and a line goes to stderr.
+- Calls that cost nothing are left out: a cached query embedding, the score-sort reranker used
+  by `graphrag`, `combined` and the agentic modes. A run with no paid call reports `[]`.
+- A run that fails returns no payload, so its usage is not reported.
 
 Requires the same Azure env vars as the pipeline (see `.env.example`). The service is
 intended to sit behind the website's Spring backend, which owns rate-limiting and the

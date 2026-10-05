@@ -4,6 +4,7 @@ import asyncio
 from typing import Protocol
 
 from ragpipe.models import Chunk
+from ragpipe.usage import STAGE_GENERATION, record_agent_response, record_tokens
 
 # Without an application-level timeout, a single stalled FoundryAgent call
 # (request sent, ACKed, but no response — no keepalive on the socket) blocks the
@@ -55,8 +56,11 @@ class Generator:
         agent: _Agent,
         timeout: float = DEFAULT_GENERATE_TIMEOUT,
         max_retries: int = DEFAULT_GENERATE_MAX_RETRIES,
+        deployment: str = "unknown",
     ) -> None:
         self._agent = agent
+        # Model deployment behind the agent, reported with each call's usage.
+        self._deployment = deployment
         self._timeout = timeout
         self._max_retries = max_retries
 
@@ -76,7 +80,14 @@ class Generator:
                 # TimeoutError semantics are identical.
                 async with asyncio.timeout(self._timeout):
                     result = await self._agent.run(prompt)
+                record_agent_response(STAGE_GENERATION, self._deployment, result)
                 return result.text
             except asyncio.TimeoutError as exc:
+                # The request was sent and may be billed, but no usage came back.
+                record_tokens(
+                    STAGE_GENERATION,
+                    self._deployment,
+                    reason="call timed out before a response",
+                )
                 last_exc = exc
         raise last_exc
