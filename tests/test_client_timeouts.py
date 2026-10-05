@@ -74,6 +74,19 @@ class _FakeMetric:
     async def single_turn_ascore(self, sample):
         return 1.0
 
+    # The gate drives RAGAS's two-call faithfulness seam to keep per-claim
+    # verdicts (canary.score_with_claims, ADR-0018).
+    async def _create_statements(self, row, callbacks):
+        return SimpleNamespace(statements=["s"])
+
+    async def _create_verdicts(self, row, statements, callbacks):
+        return SimpleNamespace(
+            statements=[SimpleNamespace(statement="s", verdict=1, reason="r")]
+        )
+
+    def _compute_score(self, verdicts):
+        return 1.0
+
 
 def test_openai_judge_complete_passes_timeout_and_retries(monkeypatch):
     import openai
@@ -145,9 +158,10 @@ async def test_claude_faithfulness_passes_timeout_and_retries(monkeypatch):
     monkeypatch.setattr(ragas.metrics, "Faithfulness", _FakeMetric)
 
     metric_fn = guardrail._build_claude_faithfulness(_S(judge_model="claude-sonnet-4-6"))
-    score = await metric_fn(question="q", answer="a", contexts=["c"])
+    scored = await metric_fn(question="q", answer="a", contexts=["c"])
 
-    assert score == 1.0
+    assert scored.score == 1.0
+    assert [c.claim for c in scored.claims] == ["s"]
     assert captured["timeout"] == foundry_judge.JUDGE_TIMEOUT
     assert captured["max_retries"] == foundry_judge.JUDGE_MAX_RETRIES
 

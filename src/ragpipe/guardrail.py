@@ -3,9 +3,19 @@ from __future__ import annotations
 from enum import Enum
 from typing import Awaitable, Callable
 
+from ragpipe.canary import ScoredClaims
 from ragpipe.models import Chunk
 
-MetricFn = Callable[..., Awaitable[float]]
+# A faithfulness metric returns either a bare scalar or the scalar plus the
+# per-claim verdicts it was computed from (ADR-0018).
+MetricFn = Callable[..., Awaitable["float | ScoredClaims"]]
+
+
+def as_scored_claims(raw: float | None | ScoredClaims) -> ScoredClaims | None:
+    """Normalise a scorer return to ``ScoredClaims`` (None stays None: no score)."""
+    if raw is None or isinstance(raw, ScoredClaims):
+        return raw
+    return ScoredClaims(score=float(raw), claims=[])
 
 
 class FaithfulnessScorer:
@@ -14,12 +24,19 @@ class FaithfulnessScorer:
     def __init__(self, metric_fn: MetricFn) -> None:
         self._metric_fn = metric_fn
 
-    async def score(self, query: str, answer: str, contexts: list[Chunk]) -> float:
-        return await self._metric_fn(
+    async def score_detailed(
+        self, query: str, answer: str, contexts: list[Chunk]
+    ) -> ScoredClaims:
+        """The score plus the decomposed per-claim verdicts behind it."""
+        raw = await self._metric_fn(
             question=query,
             answer=answer,
             contexts=[c.content for c in contexts],
         )
+        return as_scored_claims(raw)
+
+    async def score(self, query: str, answer: str, contexts: list[Chunk]) -> float:
+        return (await self.score_detailed(query, answer, contexts)).score
 
 
 def _ensure_ragas_importable() -> None:  # pragma: no cover
@@ -92,6 +109,23 @@ def build_ragas_faithfulness(settings) -> MetricFn:
     OpenAI-compatible route. Raises if JUDGE_MODEL is unset — silently falling
     back to the generator would recreate the circular setup this replaces.
     """
+    detailed = build_ragas_faithfulness_detailed(settings)
+
+    async def metric_fn(*, question: str, answer: str, contexts: list[str]) -> float:
+        scored = await detailed(question=question, answer=answer, contexts=contexts)
+        return scored.score
+
+    return metric_fn
+
+
+def build_ragas_faithfulness_detailed(settings) -> MetricFn:
+    """The faithfulness gate, returning the score plus its per-claim verdicts.
+
+    Same judge routing and the same two judge calls as the scalar gate — the
+    verdicts RAGAS computes and normally discards are kept so the live trace can
+    show *which* claim was found ungrounded (ADR-0018). ``build_ragas_faithfulness``
+    wraps this, so the calibration and canary scripts measure this exact path.
+    """
     if not settings.judge_model:
         raise ValueError(
             "JUDGE_MODEL is required: the faithfulness gate is judged by a "
@@ -113,6 +147,7 @@ def _build_claude_faithfulness(settings) -> MetricFn:  # pragma: no cover - live
     from ragas.llms import LangchainLLMWrapper
     from ragas.metrics import Faithfulness
 
+    from ragpipe.canary import score_with_claims
     from ragpipe.embeddings import anthropic_endpoint_from_project
     from ragpipe.foundry_judge import AI_FOUNDRY_SCOPE, JUDGE_MAX_RETRIES, JUDGE_TIMEOUT
     from ragpipe.usage import STAGE_FAITHFULNESS_JUDGE, build_langchain_usage_callback
@@ -146,11 +181,11 @@ def _build_claude_faithfulness(settings) -> MetricFn:  # pragma: no cover - live
         judge_chat._async_client.api_key = None
         return Faithfulness(llm=LangchainLLMWrapper(judge_chat))
 
-    async def metric_fn(*, question: str, answer: str, contexts: list[str]) -> float:
+    async def metric_fn(*, question: str, answer: str, contexts: list[str]) -> ScoredClaims:
         sample = SingleTurnSample(
             user_input=question, response=answer, retrieved_contexts=contexts
         )
-        return float(await _metric().single_turn_ascore(sample))
+        return await score_with_claims(_metric(), sample, fallback=False)
 
     return metric_fn
 
@@ -164,6 +199,7 @@ def _build_openai_faithfulness(settings) -> MetricFn:  # pragma: no cover - live
     from ragas.llms import LangchainLLMWrapper
     from ragas.metrics import Faithfulness
 
+    from ragpipe.canary import score_with_claims
     from ragpipe.embeddings import (
         COGNITIVE_SERVICES_SCOPE,
         services_endpoint_from_project,
@@ -194,11 +230,11 @@ def _build_openai_faithfulness(settings) -> MetricFn:  # pragma: no cover - live
     )
     metric = Faithfulness(llm=LangchainLLMWrapper(judge_chat))
 
-    async def metric_fn(*, question: str, answer: str, contexts: list[str]) -> float:
+    async def metric_fn(*, question: str, answer: str, contexts: list[str]) -> ScoredClaims:
         sample = SingleTurnSample(
             user_input=question, response=answer, retrieved_contexts=contexts
         )
-        return float(await metric.single_turn_ascore(sample))
+        return await score_with_claims(metric, sample, fallback=False)
 
     return metric_fn
 

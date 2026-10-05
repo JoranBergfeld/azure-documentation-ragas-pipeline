@@ -93,14 +93,25 @@ def stage_rows(state: PipelineState) -> list[dict[str, Any]]:
         titles = ", ".join(f"{chunk_label(c)} ({c.score:.2f})" for c in chunks)
         rows.append({"stage": label, "count": len(chunks), "detail": titles})
     rows.append({"stage": "answer", "count": "", "detail": state.answer})
-    rows.append(
-        {
-            "stage": "faithfulness",
-            "count": "",
-            "detail": "n/a" if state.faithfulness is None else f"{state.faithfulness:.2f}",
-        }
-    )
+    detail = "n/a" if state.faithfulness is None else f"{state.faithfulness:.2f}"
+    claims = faithfulness_claims(state)
+    if claims:
+        grounded = sum(1 for c in claims if c.get("faithful"))
+        detail += f" ({grounded}/{len(claims)} claims grounded)"
+    rows.append({"stage": "faithfulness", "count": "", "detail": detail})
     return rows
+
+
+def faithfulness_claims(state: PipelineState) -> list[dict[str, Any]]:
+    """Per-claim verdicts from the final faithfulness attempt (ADR-0018).
+
+    Empty when the judge failed, the answer decomposed into no claims, or the
+    scorer only returned a scalar.
+    """
+    for event in reversed(state.trace):
+        if event.stage == "faithfulness":
+            return list(event.data.get("claims") or [])
+    return []
 
 
 # Canonical retrieval order for the per-stage chart. Raw retrieval stages come
@@ -258,6 +269,27 @@ def main() -> None:  # pragma: no cover - UI entry point
                 st.warning(
                     f"Low confidence: faithfulness below threshold after {state.attempt} retries."
                 )
+            claims = faithfulness_claims(state)
+            if claims:
+                ungrounded = [c for c in claims if not c.get("faithful")]
+                with st.expander(
+                    f"Claim verdicts — {len(claims) - len(ungrounded)}/{len(claims)} grounded",
+                    expanded=bool(ungrounded),
+                ):
+                    st.caption(
+                        "The judge split the answer into claims and checked each against "
+                        "the retrieved context. Grounding, not factual correctness (ADR-0018)."
+                    )
+                    st.table(
+                        [
+                            {
+                                "grounded": "yes" if c.get("faithful") else "no",
+                                "claim": c.get("claim", ""),
+                                "reason": c.get("reason", ""),
+                            }
+                            for c in claims
+                        ]
+                    )
             st.subheader("Per-stage trace")
             st.caption(
                 "Documents surfaced at each retrieval stage (title + score), in rank "

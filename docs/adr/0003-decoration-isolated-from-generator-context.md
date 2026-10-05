@@ -25,10 +25,10 @@ Store decoration in a separate searchable `context` index field:
 
 ## Alternatives rejected
 
-- **Prepend decoration into `content`** (what SAC and Anthropic's published recipe
-  do): simpler (no schema change), but pays the duplication and judge-contamination
-  costs above. The papers evaluate retrieval, not a faithfulness-guardrail loop, so
-  they never face this interaction.
+- **Prepend decoration into `content`** (what per-document SAC and Anthropic's
+  published recipe do): simpler (no schema change), but pays the duplication and
+  judge-contamination costs above. The papers evaluate retrieval, not a
+  faithfulness-guardrail loop, so they never face this interaction.
 - **Embedding-only decoration** (decorate the vector, not BM25): loses the
   contextual-BM25 half of the published gains (35% → 49% failure reduction came
   from adding it).

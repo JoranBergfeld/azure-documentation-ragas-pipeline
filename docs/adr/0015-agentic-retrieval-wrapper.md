@@ -24,7 +24,7 @@ orthogonal wrapper over the `RetrievalSubstrate` interface.
 
 2. **Single-shot LLM planner, not a FoundryAgent tool-loop.** A planner (`plan()` in
    `app_wiring.py`) issues one LLM chat-completion — via `build_context_complete_fn`, the
-   same `foundry_chat_model` generator family used for SAC situating-context — that
+   same `foundry_chat_model` generator family used for per-chunk situating context — that
    decomposes the query into 2-4 focused sub-queries (`PLAN_PROMPT`, one per line). The
    wrapper then runs `inner.retrieve` over those sub-queries in a plain Python loop. There
    is no `FoundryAgent`, no retrieval tool, and no agent-driven plan/act/observe cycle:
