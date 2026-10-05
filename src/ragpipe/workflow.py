@@ -8,6 +8,7 @@ from ragpipe.guardrail import LoopDecision, decide_next
 from ragpipe.models import Chunk, PipelineState
 from ragpipe.progress import ProgressSink, emit
 from ragpipe.retrieval.substrate import RetrievalResult
+from ragpipe.usage import collect_usage
 
 # Callable stage signatures (sync or async tolerated via _maybe_await).
 RetrieveFn = Callable[..., object]  # (query, pool, *, on_event=None) -> awaitable RetrievalResult
@@ -48,7 +49,14 @@ async def run_pipeline(
     query: str, deps: PipelineDeps, *, on_event: ProgressSink | None = None
 ) -> PipelineState:
     state = PipelineState(query=query)
+    # Every metered call made below records itself into state.usage (ADR-0018).
+    with collect_usage(state.usage):
+        return await _run(query, deps, state, on_event)
 
+
+async def _run(
+    query: str, deps: PipelineDeps, state: PipelineState, on_event: ProgressSink | None
+) -> PipelineState:
     emit(on_event, "retrieve", "start", message="Retrieving candidates")
     result: RetrievalResult = await _maybe_await(
         deps.retrieve(query, deps.candidate_pool, on_event=on_event)

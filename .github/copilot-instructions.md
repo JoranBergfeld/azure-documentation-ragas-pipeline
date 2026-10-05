@@ -72,6 +72,10 @@ required** everywhere — an omitted/unknown mode returns HTTP 422; there is no 
   For judges on the OpenAI-compatible Foundry route, build `AzureChatOpenAI(model=<deployment>)`
   (a null model 400s on the sglang-backed deployments). Every live LLM/judge client is built
   with explicit `timeout` + `max_retries` (shared `JUDGE_TIMEOUT`/`JUDGE_MAX_RETRIES`).
+- **Usage reporting (ADR-0018):** every metered call records a `UsageEntry` through
+  `ragpipe.usage.record_*` at the point the provider response is in hand; `run_pipeline`
+  collects them into `PipelineState.usage`. A new paid call needs its own `record_*` line.
+  Usage only, no prices.
 - **Search index `context` field is retrieval-only.** Embeddings are computed from
   `context + "\n\n" + content`, but retrievers select only `content` into prompts/judging.
 - **Docs discipline:** record significant decisions as an ADR in `docs/adr/NNNN-kebab.md`

@@ -6,6 +6,7 @@ from azure.search.documents.models import VectorizedQuery
 
 from ragpipe.models import Chunk
 from ragpipe.retrieval._types import Searchable
+from ragpipe.usage import SEMANTIC_RANKER_DEPLOYMENT, STAGE_RERANK, record_requests
 
 
 def _to_reranked_chunk(doc: dict[str, Any]) -> Chunk:
@@ -67,4 +68,7 @@ class SemanticReranker:
             top=k,
             select=["id", "title", "url", "content"],
         )
-        return [_to_reranked_chunk(d) for d in results][:k]
+        reranked = [_to_reranked_chunk(d) for d in results][:k]
+        # The semantic ranker bills per query, not per token.
+        record_requests(STAGE_RERANK, SEMANTIC_RANKER_DEPLOYMENT)
+        return reranked

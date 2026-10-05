@@ -229,3 +229,185 @@ def test_run_stream_emits_error_frame_on_failure():
     assert res.status_code == 200
     assert "event: error" in res.text
     assert "RuntimeError" in res.text
+
+
+# --- usage reporting (ADR-0018) ---
+
+
+def _post_run(state: PipelineState, mode: str = "contextual") -> dict:
+    async def fake_pipeline(query: str) -> PipelineState:
+        return state
+
+    api.app.dependency_overrides[api.get_pipeline_fn_for_mode] = _make_factory(fake_pipeline)
+    try:
+        res = TestClient(api.app).post("/run", json={"query": "q", "mode": mode})
+    finally:
+        api.app.dependency_overrides.clear()
+    assert res.status_code == 200
+    return res.json()
+
+
+def _attempt_usage(gen_in: int, gen_out: int) -> list:
+    from ragpipe.usage import UsageEntry
+
+    return [
+        UsageEntry(stage="rerank", deployment="azure-ai-search-semantic-ranker", request_units=1),
+        UsageEntry(
+            stage="generation",
+            deployment="gpt-5.4",
+            input_tokens=gen_in,
+            cached_input_tokens=512,
+            output_tokens=gen_out,
+        ),
+        UsageEntry(
+            stage="faithfulness_judge",
+            deployment="claude-sonnet-4-6",
+            input_tokens=300,
+            output_tokens=40,
+        ),
+    ]
+
+
+def test_run_reports_usage_per_call():
+    from ragpipe.usage import UsageEntry
+
+    state = _state()
+    state.usage = [
+        UsageEntry(stage="query_embedding", deployment="text-embedding-3-small", input_tokens=6),
+        *_attempt_usage(900, 150),
+    ]
+    body = _post_run(state)
+
+    assert body["usage"] == [
+        {
+            "stage": "query_embedding",
+            "deployment": "text-embedding-3-small",
+            "inputTokens": 6,
+            "cachedInputTokens": None,
+            "outputTokens": None,
+            "requestUnits": None,
+            "usageMissing": False,
+        },
+        {
+            "stage": "rerank",
+            "deployment": "azure-ai-search-semantic-ranker",
+            "inputTokens": None,
+            "cachedInputTokens": None,
+            "outputTokens": None,
+            "requestUnits": 1,
+            "usageMissing": False,
+        },
+        {
+            "stage": "generation",
+            "deployment": "gpt-5.4",
+            "inputTokens": 900,
+            "cachedInputTokens": 512,
+            "outputTokens": 150,
+            "requestUnits": None,
+            "usageMissing": False,
+        },
+        {
+            "stage": "faithfulness_judge",
+            "deployment": "claude-sonnet-4-6",
+            "inputTokens": 300,
+            "cachedInputTokens": None,
+            "outputTokens": 40,
+            "requestUnits": None,
+            "usageMissing": False,
+        },
+    ]
+
+
+def test_run_usage_is_additive_to_the_existing_payload():
+    body = _post_run(_state())
+    assert set(body) == {
+        "mode", "query", "answer", "faithfulness", "attempt",
+        "lowConfidence", "abstained", "stages", "usage",
+    }
+
+
+def test_run_reports_each_guardrail_retry_separately():
+    state = _state()
+    state.usage = [*_attempt_usage(900, 150), *_attempt_usage(1400, 180)]
+    body = _post_run(state)
+
+    assert [u["stage"] for u in body["usage"]] == [
+        "rerank", "generation", "faithfulness_judge",
+        "rerank", "generation", "faithfulness_judge",
+    ]
+    generations = [u for u in body["usage"] if u["stage"] == "generation"]
+    assert [g["inputTokens"] for g in generations] == [900, 1400]
+
+
+def test_run_without_paid_calls_reports_empty_usage_list():
+    body = _post_run(PipelineState(query="q", answer="a"))
+    assert body["usage"] == []
+
+
+def test_run_flags_missing_provider_usage():
+    from ragpipe.usage import UsageEntry
+
+    state = _state()
+    state.usage = [UsageEntry(stage="generation", deployment="gpt-5.4", usage_missing=True)]
+    entry = _post_run(state)["usage"][0]
+
+    assert entry["usageMissing"] is True
+    assert entry["inputTokens"] is None
+    assert entry["outputTokens"] is None
+    assert entry["requestUnits"] is None
+
+
+def test_run_usage_has_no_money_fields():
+    state = _state()
+    state.usage = _attempt_usage(900, 150)
+    for entry in _post_run(state)["usage"]:
+        assert set(entry) == {
+            "stage", "deployment", "inputTokens", "cachedInputTokens",
+            "outputTokens", "requestUnits", "usageMissing",
+        }
+
+
+@pytest.mark.parametrize("mode", [m.value for m in api.RetrievalMode])
+def test_run_reports_usage_for_every_mode(mode):
+    state = _fake_state(mode)
+    state.usage = _attempt_usage(900, 150)
+    body = _post_run(state, mode=mode)
+    assert body["mode"] == mode
+    assert len(body["usage"]) == 3
+
+
+def test_run_stream_result_carries_usage():
+    async def fake_pipeline(query, *, on_event=None):
+        state = _state()
+        state.usage = _attempt_usage(900, 150)
+        return state
+
+    api.app.dependency_overrides[api.get_pipeline_fn_for_mode] = _make_factory(fake_pipeline)
+    try:
+        res = TestClient(api.app).post("/run/stream", json={"query": "q", "mode": "contextual"})
+    finally:
+        api.app.dependency_overrides.clear()
+
+    frame = next(f for f in res.text.split("\n\n") if f.startswith("event: result"))
+    payload = json.loads(frame.split("data: ", 1)[1])
+    assert [u["stage"] for u in payload["usage"]] == ["rerank", "generation", "faithfulness_judge"]
+
+
+def test_compare_reports_usage_per_mode():
+    async def fake_factory(mode: str):
+        async def fn(q: str) -> PipelineState:
+            state = _fake_state(mode)
+            state.usage = _attempt_usage(900, 150)
+            return state
+
+        return fn
+
+    api.app.dependency_overrides[api.get_pipeline_fn_for_mode] = lambda: fake_factory
+    try:
+        resp = TestClient(api.app).post(
+            "/compare", json={"query": "q", "modes": ["baseline", "graphrag"]}
+        )
+    finally:
+        api.app.dependency_overrides.clear()
+
+    assert all(len(r["usage"]) == 3 for r in resp.json()["results"])

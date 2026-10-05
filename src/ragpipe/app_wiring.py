@@ -129,7 +129,8 @@ def build_pipeline_fn(
         settings,
         retrieve=substrate.retrieve,
         reranker=reranker,
-        generator=Generator(agent),
+        # setup_agents.py registers the agent against FOUNDRY_CHAT_MODEL.
+        generator=Generator(agent, deployment=settings.foundry_chat_model),
         scorer=FaithfulnessScorer(build_ragas_faithfulness(settings)),
     )
 

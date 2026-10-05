@@ -119,6 +119,7 @@ def build_context_complete_fn(
     cache (ADR-0005), not from sampling parameters.
     """
     from ragpipe.embeddings import _build_client
+    from ragpipe.usage import STAGE_PLAN, record_openai_chat
 
     client = _build_client(settings, api_version, timeout, max_retries)
 
@@ -127,6 +128,9 @@ def build_context_complete_fn(
             model=settings.foundry_chat_model,
             messages=[{"role": "user", "content": prompt}],
         )
+        # Inside a pipeline run the only caller is the agentic planner; ingest
+        # runs outside one, where this records nothing.
+        record_openai_chat(STAGE_PLAN, settings.foundry_chat_model, resp)
         return resp.choices[0].message.content or ""
 
     return complete

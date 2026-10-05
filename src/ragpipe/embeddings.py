@@ -18,6 +18,7 @@ from typing import Callable
 from urllib.parse import urlparse
 
 from ragpipe.config import Settings
+from ragpipe.usage import STAGE_QUERY_EMBEDDING, record_openai_embedding
 
 COGNITIVE_SERVICES_SCOPE = "https://cognitiveservices.azure.com/.default"
 
@@ -99,6 +100,10 @@ def build_embed_fn(
     def embed(text: str) -> list[float]:
         result = client.embeddings.create(
             model=settings.foundry_embedding_model, input=[text]
+        )
+        # No-op outside a pipeline run, so ingest callers are unaffected.
+        record_openai_embedding(
+            STAGE_QUERY_EMBEDDING, settings.foundry_embedding_model, result
         )
         return list(result.data[0].embedding)
 
