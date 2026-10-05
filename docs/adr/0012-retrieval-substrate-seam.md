@@ -43,9 +43,10 @@ at each stage so the eval harness can read it.
    new substrate is: implement the protocol, register the name, done.
 
 5. **8 modes = 4 substrates x agentic toggle.** The four substrates are Baseline,
-   SAC+RAPTOR, GraphRAG, and Combined. The agentic wrapper composes over any of them as
-   a fifth orthogonal concern. Configuration exposes a flat 8-value mode name on the API
-   for clarity; internally it is `Substrate` enum + `agentic: bool`.
+   RAPTOR over Anthropic-contextual leaves, GraphRAG, and Combined. The agentic wrapper
+   composes over any of them as a fifth orthogonal concern. Configuration exposes a flat
+   8-value mode name on the API for clarity; internally it is `Substrate` enum +
+   `agentic: bool`.
 
 ## Alternatives rejected
 

@@ -4,11 +4,11 @@
 
 ## Context
 
-The existing pipeline stores SAC-decorated chunks in the contextual index and searches
-them with a flat hybrid query. That works, but it misses structure that exists in the
-corpus: a long policy document has sections that are meaningfully summarizable, and a
-search over raw chunks will miss queries whose intent matches a high-level section rather
-than any individual passage.
+The existing pipeline stores Anthropic-contextual chunks in the contextual index and
+searches them with a flat hybrid query. That works, but it misses structure that exists
+in the corpus: a long policy document has sections that are meaningfully summarizable,
+and a search over raw chunks will miss queries whose intent matches a high-level section
+rather than any individual passage.
 
 RAPTOR (Recursive Abstractive Processing for Tree-Organized Retrieval) addresses this
 by building a tree of LLM summaries over clusters of chunks, then searching across
@@ -16,14 +16,15 @@ all tree levels at once at query time. The paper reports collapsed-tree retrieva
 matching or beating tree-traversal on most benchmarks, and it's much simpler to
 implement on a flat search index.
 
-The RAPTOR+SAC substrate needs an index. The existing contextual index is already bound
-to a Foundry knowledge source (ADR-0007) and cannot be freely altered without affecting
-the live generator's knowledge source.
+The RAPTOR-over-contextual-leaves substrate needs an index. The existing contextual
+index is already bound to a Foundry knowledge source (ADR-0007) and cannot be freely
+altered without affecting the live generator's knowledge source.
 
 ## Decision
 
-1. **Summary nodes with a `level` field.** Level 0 leaves are the existing SAC-decorated
-   chunks. RAPTOR adds levels 1+ built at ingest by recursive cluster-then-summarize:
+1. **Summary nodes with a `level` field.** Level 0 leaves are the existing
+   Anthropic-contextual chunks. RAPTOR adds levels 1+ built at ingest by recursive
+   cluster-then-summarize:
    embed leaves, cluster with GMM/UMAP (or agglomerative fallback), LLM-summarize each
    cluster into a parent node, repeat until one root or a level cap. Each node carries a
    `level` field so query-time and eval can distinguish leaves from summaries.
@@ -34,12 +35,13 @@ the live generator's knowledge source.
    competitive performance. The semantic reranker then runs over the mixed-level candidate
    list as normal.
 
-3. **Dedicated `raptor-sac` index.** The RAPTOR+SAC substrate gets its own Azure AI
-   Search index rather than mutating the Foundry-bound contextual index. SAC leaves are
-   re-uploaded into `raptor-sac` (cheap: decoration is a cache-hit per ADR-0005), and
-   RAPTOR summary nodes go on top. The Foundry-bound contextual index stays exactly as
-   it is. This trades a small amount of storage duplication for a clean boundary, which
-   matters more for a demo than the storage cost on a 584-page corpus.
+3. **Dedicated `raptor-sac` index.** The RAPTOR-over-contextual-leaves substrate gets
+   its own Azure AI Search index rather than mutating the Foundry-bound contextual
+   index. Anthropic-contextual leaves are re-uploaded into `raptor-sac` (cheap:
+   decoration is a cache-hit per ADR-0005), and RAPTOR summary nodes go on top. The
+   Foundry-bound contextual index stays exactly as it is. This trades a small amount of
+   storage duplication for a clean boundary, which matters more for a demo than the
+   storage cost on a 584-page corpus.
 
 4. **Build path is idempotent and independent.** `build_raptor` runs separately from
    other substrate builders. Summary generation uses the content-addressed,
@@ -78,7 +80,7 @@ the live generator's knowledge source.
 
 - *RAPTOR: Recursive Abstractive Processing for Tree-Organized Retrieval* —
   https://arxiv.org/abs/2401.18059
-- Anthropic, *Introducing Contextual Retrieval* (SAC / contextual embeddings) —
+- Anthropic, *Introducing Contextual Retrieval* (per-chunk contextual embeddings) —
   https://www.anthropic.com/news/contextual-retrieval
 - Spec: `docs/superpowers/specs/2026-06-16-multi-substrate-retrieval-design.md` §2
-  (SAC+RAPTOR para), §3 (`build_raptor`), §4 (index reuse and Foundry binding)
+  (RAPTOR over contextual leaves), §3 (`build_raptor`), §4 (index reuse and Foundry binding)
