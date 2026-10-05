@@ -328,7 +328,9 @@ class ScoredClaims:
     claims: list[ClaimVerdict]
 
 
-async def score_with_claims(metric, sample) -> ScoredClaims:  # pragma: no cover - live judge
+async def score_with_claims(  # pragma: no cover - live judge
+    metric, sample, *, fallback: bool = True
+) -> ScoredClaims:
     """Score a sample and capture the decomposed per-claim verdicts.
 
     Reproduces RAGAS 0.4.3 ``Faithfulness._ascore`` (decompose the answer into
@@ -337,7 +339,9 @@ async def score_with_claims(metric, sample) -> ScoredClaims:  # pragma: no cover
     on pinned ``ragas==0.4.3`` internals (``_create_statements`` /
     ``_create_verdicts`` / ``_compute_score``); the version pin (ADR-0018) is what
     makes that safe. On any failure it falls back to the public scalar path and
-    returns empty claims rather than breaking the canary.
+    returns empty claims rather than breaking the canary. The live gate passes
+    ``fallback=False``: there a judge failure must propagate so the gate fails
+    closed, instead of paying for a second scoring pass on the hot path.
     """
     import math
 
@@ -350,5 +354,7 @@ async def score_with_claims(metric, sample) -> ScoredClaims:  # pragma: no cover
         score = float(metric._compute_score(verdicts))
         return ScoredClaims(score=score, claims=parse_claim_verdicts(verdicts.statements))
     except Exception:
+        if not fallback:
+            raise
         score = float(await metric.single_turn_ascore(sample))
         return ScoredClaims(score=score, claims=[])

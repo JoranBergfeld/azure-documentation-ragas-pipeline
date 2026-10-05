@@ -74,11 +74,22 @@ documented as such.
    normalises RAGAS's statement-verdict objects. Touching RAGAS internals is made
    safe by the exact version pin (decision 1).
 
+   *Amendment (2026-10):* the **live gate** now scores through the same seam
+   (`guardrail.build_ragas_faithfulness_detailed` → `score_with_claims(...,
+   fallback=False)`), so every run's `faithfulness` trace entry and `/run/stream`
+   event carry the per-claim verdicts, and the dashboard's Run tab shows them. Same
+   two judge calls, no extra cost. Without the fallback, a judge failure still
+   propagates and the gate fails closed, instead of paying for a second scoring pass.
+   `build_ragas_faithfulness` (scalar) now wraps the detailed builder, so calibration
+   and the canary measure exactly the path the gate runs. A seam-guard test fails if
+   a RAGAS bump removes or reshapes the private methods. The idea is ported from
+   the superseded PR #19.
+
 5. **Document the grounding-vs-correctness caveat** in the README and `.env.example`:
    faithfulness gates grounding in the retrieved context, not factual correctness.
 
-The live gate (`decide_next`) is unchanged — it still compares the scalar to the
-threshold; this ADR is about *how that threshold is chosen, pinned, and watched*,
+The live gate's decision (`decide_next`) is unchanged — it still compares the scalar to the
+threshold, and per-claim verdicts are logged for diagnosis only; this ADR is about *how that threshold is chosen, pinned, and watched*,
 not about changing the hot path.
 
 ## Alternatives rejected

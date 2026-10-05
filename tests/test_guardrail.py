@@ -26,3 +26,25 @@ def test_prewarm_ragas_imports_builds_runnable_passthrough_with_optional_name():
     from langchain_core.runnables.passthrough import RunnablePassthrough
 
     assert RunnablePassthrough().name is None
+
+
+def test_pinned_ragas_exposes_the_per_claim_seam():
+    """The live gate keeps per-claim verdicts by driving RAGAS 0.4.3's private
+    two-call faithfulness pass (``canary.score_with_claims``, ADR-0018). Fail
+    loudly if a RAGAS bump removes or reshapes that seam."""
+    import inspect
+
+    from ragpipe.guardrail import _ensure_ragas_importable
+
+    _ensure_ragas_importable()
+    from ragas.metrics import Faithfulness
+    from ragas.metrics._faithfulness import StatementFaithfulnessAnswer
+
+    assert list(inspect.signature(Faithfulness._create_statements).parameters) == [
+        "self", "row", "callbacks",
+    ]
+    assert list(inspect.signature(Faithfulness._create_verdicts).parameters) == [
+        "self", "row", "statements", "callbacks",
+    ]
+    assert callable(Faithfulness._compute_score)
+    assert {"statement", "verdict", "reason"} <= set(StatementFaithfulnessAnswer.model_fields)

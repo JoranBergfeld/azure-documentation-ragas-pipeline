@@ -167,3 +167,45 @@ async def test_emits_faithfulness_error_event_on_judge_failure():
 async def test_no_sink_keeps_behavior_unchanged():
     state = await run_pipeline("q", _deps([0.9]))  # default on_event=None
     assert state.faithfulness == 0.9 and state.abstained is False
+
+
+@pytest.mark.asyncio
+async def test_per_claim_verdicts_land_in_trace_and_event():
+    from ragpipe.canary import ClaimVerdict, ScoredClaims
+
+    scored = ScoredClaims(
+        score=0.5,
+        claims=[
+            ClaimVerdict(claim="RRF fuses ranks", faithful=True, reason="in ctx"),
+            ClaimVerdict(claim="RRF was invented in 2020", faithful=False, reason="absent"),
+        ],
+    )
+    events, sink = _events()
+    deps = _deps([scored, 0.9])
+    state = await run_pipeline("q", deps, on_event=sink)
+
+    # The decision still runs on the scalar: 0.5 < 0.7 retries, then 0.9 passes.
+    assert state.attempt == 1 and state.faithfulness == 0.9
+    faith = [e for e in state.trace if e.stage == "faithfulness"]
+    assert faith[0].data["claims"] == [
+        {"claim": "RRF fuses ranks", "faithful": True, "reason": "in ctx"},
+        {"claim": "RRF was invented in 2020", "faithful": False, "reason": "absent"},
+    ]
+    # A scalar-only score carries no claims.
+    assert faith[1].data["claims"] == []
+    complete = [e for e in events if e.phase == "faithfulness" and e.status == "complete"]
+    assert len(complete[0].detail["claims"]) == 2
+    assert complete[0].detail["score"] == 0.5
+
+
+@pytest.mark.asyncio
+async def test_judge_failure_traces_no_claims():
+    deps = _deps([0.9])
+
+    def boom(q, a, c):
+        raise RuntimeError("judge down")
+
+    deps.score = boom
+    state = await run_pipeline("q", deps)
+    faith = next(e for e in state.trace if e.stage == "faithfulness")
+    assert faith.data == {"score": None, "attempt": 0, "claims": []}

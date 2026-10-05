@@ -35,3 +35,33 @@ class _Settings:
 def test_gate_requires_judge_model():
     with pytest.raises(ValueError, match="JUDGE_MODEL"):
         build_ragas_faithfulness(_Settings())
+
+
+@pytest.mark.asyncio
+async def test_scorer_score_detailed_keeps_claims_and_score_returns_scalar():
+    from ragpipe.canary import ClaimVerdict, ScoredClaims
+
+    scored = ScoredClaims(score=0.5, claims=[ClaimVerdict(claim="c", faithful=False)])
+
+    async def fake_metric(*, question, answer, contexts):
+        return scored
+
+    scorer = FaithfulnessScorer(metric_fn=fake_metric)
+    assert await scorer.score_detailed("q", "a", [_chunk("x")]) is scored
+    assert await scorer.score("q", "a", [_chunk("x")]) == 0.5
+
+
+@pytest.mark.asyncio
+async def test_scorer_score_detailed_wraps_a_scalar_metric():
+    async def fake_metric(*, question, answer, contexts):
+        return 0.83
+
+    scored = await FaithfulnessScorer(metric_fn=fake_metric).score_detailed("q", "a", [])
+    assert scored.score == 0.83 and scored.claims == []
+
+
+def test_detailed_gate_requires_judge_model():
+    from ragpipe.guardrail import build_ragas_faithfulness_detailed
+
+    with pytest.raises(ValueError, match="JUDGE_MODEL"):
+        build_ragas_faithfulness_detailed(_Settings())

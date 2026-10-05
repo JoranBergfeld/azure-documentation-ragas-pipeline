@@ -5,6 +5,7 @@ from app.dashboard import (
     available_architecture_diagrams,
     chunk_label,
     eval_rows,
+    faithfulness_claims,
     is_agentic_mode,
     per_stage_chart_data,
     progress_step_view,
@@ -206,3 +207,24 @@ def test_progress_step_view_falls_back_to_phase_when_no_message():
 
     ev = ProgressEvent(phase="retrieve.fuse", status="complete")
     assert progress_step_view(ev) == ("✅", "retrieve.fuse")
+
+
+def test_stage_rows_and_claims_surface_per_claim_verdicts():
+    state = _state()
+    state.add_trace("faithfulness", {"score": 0.4, "attempt": 0, "claims": [
+        {"claim": "stale", "faithful": False, "reason": ""},
+    ]})
+    final = [
+        {"claim": "a", "faithful": True, "reason": "r"},
+        {"claim": "b", "faithful": False, "reason": "r"},
+    ]
+    state.add_trace("faithfulness", {"score": 0.81, "attempt": 1, "claims": final})
+
+    # Only the final attempt's verdicts are shown.
+    assert faithfulness_claims(state) == final
+    faith = next(r for r in stage_rows(state) if r["stage"] == "faithfulness")
+    assert faith["detail"] == "0.81 (1/2 claims grounded)"
+
+
+def test_faithfulness_claims_empty_without_trace():
+    assert faithfulness_claims(_state()) == []

@@ -4,7 +4,7 @@ import sys
 from dataclasses import dataclass
 from typing import Callable
 
-from ragpipe.guardrail import LoopDecision, decide_next
+from ragpipe.guardrail import LoopDecision, as_scored_claims, decide_next
 from ragpipe.models import Chunk, PipelineState
 from ragpipe.progress import ProgressSink, emit
 from ragpipe.retrieval.substrate import RetrievalResult
@@ -125,8 +125,11 @@ async def _run(
             attempt=state.attempt,
             message=f"Scoring faithfulness (attempt {state.attempt + 1})",
         )
+        claims: list[dict] = []
         try:
-            score = await _maybe_await(deps.score(query, state.answer, state.reranked))
+            scored = as_scored_claims(
+                await _maybe_await(deps.score(query, state.answer, state.reranked))
+            )
         except Exception as exc:  # judge failure -> fail-closed
             # Logged so operators can tell an outage from a scorer bug; the
             # decision path is identical either way (abstain immediately).
@@ -145,6 +148,10 @@ async def _run(
                 error=type(exc).__name__,
             )
         else:
+            # Per-claim verdicts are diagnostic only (ADR-0018): the decision
+            # below still compares the scalar to the threshold.
+            score = scored.score if scored is not None else None
+            claims = [c.to_dict() for c in scored.claims] if scored is not None else []
             emit(
                 on_event,
                 "faithfulness",
@@ -153,9 +160,12 @@ async def _run(
                 message=(f"Faithfulness {score:.2f}" if score is not None else "Faithfulness n/a"),
                 score=score,
                 threshold=deps.threshold,
+                claims=claims,
             )
         state.faithfulness = score
-        state.add_trace("faithfulness", {"score": score, "attempt": state.attempt})
+        state.add_trace(
+            "faithfulness", {"score": score, "attempt": state.attempt, "claims": claims}
+        )
 
         decision = decide_next(
             score=score,

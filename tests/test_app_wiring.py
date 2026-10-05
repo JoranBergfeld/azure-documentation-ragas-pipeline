@@ -93,3 +93,21 @@ def test_build_pipeline_fn_requires_keyword_only_mode():
     mode = params["mode"]
     assert mode.default is inspect.Parameter.empty
     assert mode.kind is inspect.Parameter.KEYWORD_ONLY
+
+
+def test_make_deps_prefers_the_per_claim_scorer_path():
+    class _S:
+        faithfulness_threshold = 0.7
+        max_retries = 2
+        top_k = 4
+        candidate_pool = 15
+
+    class _Scorer:
+        def score(self, q, a, c):
+            return "scalar"
+
+        def score_detailed(self, q, a, c):
+            return "detailed"
+
+    deps = make_deps(_S(), retrieve=None, reranker=None, generator=None, scorer=_Scorer())
+    assert deps.score("q", "a", []) == "detailed"

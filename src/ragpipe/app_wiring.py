@@ -7,12 +7,21 @@ from ragpipe.models import PipelineState
 from ragpipe.workflow import PipelineDeps, run_pipeline
 
 
+def _score_callable(scorer):
+    """Prefer the scorer's per-claim path so the trace carries verdicts (ADR-0018);
+    a scalar-only scorer still works."""
+    detailed = getattr(scorer, "score_detailed", None)
+    if detailed is not None:
+        return lambda q, a, c: detailed(q, a, c)
+    return lambda q, a, c: scorer.score(q, a, c)
+
+
 def make_deps(settings, retrieve, reranker, generator, scorer) -> PipelineDeps:
     return PipelineDeps(
         retrieve=retrieve,
         rerank=lambda q, fused, k: reranker.rerank(q, fused, top_k=k),
         generate=lambda q, chunks, prev: generator.generate(q, chunks, prev),
-        score=lambda q, a, c: scorer.score(q, a, c),
+        score=_score_callable(scorer),
         threshold=settings.faithfulness_threshold,
         max_retries=settings.max_retries,
         top_k=settings.top_k,
