@@ -10,7 +10,7 @@ FROM python:3.11-slim
 
 # uv ships as a static binary in its own published image; copy it in rather
 # than pip-installing it. Pinned to the 0.11 line we develop against.
-COPY --from=ghcr.io/astral-sh/uv:0.11 /uv /uvx /bin/
+COPY --from=ghcr.io/astral-sh/uv:0.12 /uv /uvx /bin/
 
 WORKDIR /app
 
