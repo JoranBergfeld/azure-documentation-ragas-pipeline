@@ -8,12 +8,12 @@ def test_settings_loads_from_env(monkeypatch):
     # Override base env with specific values for this test
     monkeypatch.setenv("FOUNDRY_PROJECT_ENDPOINT", "https://proj.services.ai.azure.com")
     monkeypatch.setenv("FOUNDRY_CHAT_MODEL", "gpt-4o")
-    monkeypatch.setenv("SEARCH_INDEX", "ms-docs")
+    monkeypatch.setenv("RAG_DATABASE_URL", "postgresql://rag_service@db/rag")
 
     s = Settings.from_env()
 
     assert s.foundry_chat_model == "gpt-4o"
-    assert s.search_index == "ms-docs"
+    assert s.rag_database_url == "postgresql://rag_service@db/rag"
     assert s.faithfulness_threshold == 0.7  # default
     assert s.max_retries == 2  # default
     assert s.top_k == 5  # default
@@ -32,8 +32,6 @@ def _base_env(monkeypatch):
         "FOUNDRY_PROJECT_ENDPOINT": "https://acct.services.ai.azure.com/api/projects/p",
         "FOUNDRY_CHAT_MODEL": "gpt-5.4",
         "FOUNDRY_EMBEDDING_MODEL": "text-embedding-3-small",
-        "SEARCH_ENDPOINT": "https://s.search.windows.net",
-        "SEARCH_INDEX": "idx",
         "GENERATOR_AGENT_NAME": "gen",
     }.items():
         monkeypatch.setenv(k, v)
@@ -45,6 +43,7 @@ def _base_env(monkeypatch):
     monkeypatch.delenv("JUDGE_MODEL", raising=False)
     monkeypatch.delenv("OFFLINE_JUDGE_MODEL", raising=False)
     monkeypatch.delenv("GRAPH_QUERY_ROUTING", raising=False)
+    monkeypatch.delenv("RAG_DATABASE_URL", raising=False)
 
 
 def test_judge_models_parsed_from_env(monkeypatch):
@@ -135,3 +134,17 @@ def test_is_experimental_mode_accepts_enum_and_str():
     assert is_experimental_mode(RetrievalMode.CONTEXTUAL) is False
     assert is_experimental_mode("contextual") is False
     assert is_experimental_mode("not-a-mode") is False
+
+
+def test_database_url_is_optional_for_callers_that_never_retrieve(monkeypatch):
+    _base_env(monkeypatch)
+    assert Settings.from_env(load=False).rag_database_url is None
+
+
+def test_rerank_modes_are_unavailable_until_a_reranker_serves():
+    from ragpipe.config import RetrievalMode, unavailable_reason
+
+    assert unavailable_reason("contextual") == "reranker-offline"
+    assert unavailable_reason(RetrievalMode.RAPTOR_SAC) == "reranker-offline"
+    assert unavailable_reason("baseline_agentic") is None
+    assert unavailable_reason(RetrievalMode.GRAPHRAG) is None

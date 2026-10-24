@@ -8,7 +8,7 @@ import math
 import os
 
 from ragpipe.app_wiring import build_pipeline_fn
-from ragpipe.config import RetrievalMode, Settings, TestsetMode
+from ragpipe.config import RetrievalMode, Settings, TestsetMode, unavailable_reason
 from ragpipe.eval.harness import (
     aggregate,
     aggregate_by_tag,
@@ -46,20 +46,16 @@ def build_per_mode_payload(mode: str, mode_result: dict) -> dict:
     return {"mode": mode, **mode_result}
 
 
-def _sample_corpus_docs(settings, limit: int = 40) -> list[dict]:  # pragma: no cover - live Azure
-    """Pull a sample of indexed chunks to seed synthetic test-set generation.
+def _sample_corpus_docs(settings, limit: int = 40) -> list[dict]:  # pragma: no cover - live DB
+    """Pull a sample of stored chunks to seed synthetic test-set generation.
 
-    Reuses the already-ingested content in Azure AI Search so we don't re-fetch the
+    Reuses the already-imported content in Postgres so we don't re-fetch the
     corpus. Returns [{"content", "url"}].
     """
-    from azure.identity import DefaultAzureCredential
-    from azure.search.documents import SearchClient
+    from ragpipe.pgstore import MS_DOCS, PgTable, open_pool
 
-    client = SearchClient(
-        settings.search_endpoint, settings.search_index, DefaultAzureCredential()
-    )
-    results = client.search(search_text="*", top=limit, select=["content", "url"])
-    return [{"content": r["content"], "url": r.get("url", "")} for r in results]
+    rows = PgTable(open_pool(settings.rag_database_url), MS_DOCS).sample(limit)
+    return [{"content": r["content"], "url": r["url"]} for r in rows]
 
 
 def _load_items(settings):  # pragma: no cover
@@ -73,7 +69,10 @@ def _load_items(settings):  # pragma: no cover
 
 def main() -> None:  # pragma: no cover
     parser = argparse.ArgumentParser()
-    parser.add_argument("--modes", default="contextual,baseline")
+    parser.add_argument(
+        "--modes",
+        default=",".join(m.value for m in RetrievalMode if unavailable_reason(m) is None),
+    )
     args = parser.parse_args()
     modes = [RetrievalMode(m.strip()) for m in args.modes.split(",") if m.strip()]
 
@@ -94,6 +93,13 @@ def main() -> None:  # pragma: no cover
                 cached = json.load(f)
             results_by_mode[mode_value] = {k: v for k, v in cached.items() if k != "mode"}
             print(f"=== mode: {mode_value} === (cached: {filename})", flush=True)
+            continue
+        # A mode that can't run (the rerank modes while the reranker is offline,
+        # issue #37) is skipped, not fatal: the boot-time harness lists modes
+        # from homelab and shouldn't lose every other mode's snapshot over one.
+        reason = unavailable_reason(mode)
+        if reason is not None:
+            print(f"=== mode: {mode_value} === (skipped: {reason})", flush=True)
             continue
 
         print(f"=== mode: {mode_value} ===", flush=True)

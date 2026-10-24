@@ -1,7 +1,8 @@
 # RAGAS-infused RAG pipeline
 
 Observable hybrid-retrieval RAG over Microsoft/Azure docs, built on Microsoft
-Agent Framework + Azure AI Foundry + Azure AI Search, evaluated with RAGAS.
+Agent Framework + Azure AI Foundry, retrieving from pgvector on Postgres (it used to be
+Azure AI Search, ADR-0021), evaluated with RAGAS.
 
 ![RAGAS-infused RAG pipeline — architecture](docs/pipeline.svg)
 
@@ -11,14 +12,15 @@ breadcrumb + cached LLM situating context using Anthropic-style per-chunk contex
 retrieval (visible to retrieval only, see
 `docs/adr/0001-contextual-chunk-decoration.md`), and indexes it across the substrate
 indexes in Azure AI Search (`contextual`, `baseline`, `raptor-sac`, and the three
-`graph-*` indexes);
+`graph-*` indexes), which are exported and imported into Postgres for retrieval (see
+[Retrieval store](#retrieval-store-postgres));
 **② Query pipeline** runs a **pluggable retrieval substrate** (ADR-0012) — one of
 **9 modes**: `contextual`, `baseline`, `raptor_sac` (RAPTOR collapsed-tree over
 Anthropic-contextual leaves; the legacy `sac` token in mode/index names refers to
 this implemented per-chunk technique, not per-document SAC from arXiv:2510.06999;
 ADR-0013), `graphrag` (flat graph; the global community leg is routed by query class, ADR-0014/0018), `combined`
 (RAPTOR ⊕ GraphRAG, RRF-fused), and the four `*_agentic` wrappers (bounded
-plan→retrieve loop, ADR-0015 — **experimental / unevaluated**, ADR-0018) — then a shared tail: Azure semantic rerank → Foundry
+plan→retrieve loop, ADR-0015 — **experimental / unevaluated**, ADR-0018) — then a shared tail: rerank → Foundry
 generator agent, with a directive RAGAS faithfulness guardrail judged by Claude
 (ADR-0009) that widens the rerank window and regenerates on weak grounding, and
 abstains when retries exhaust (the gate scores **grounding in the retrieved
@@ -78,6 +80,47 @@ uv run python -m ragpipe.ingest 3                           # smoke run: first 3
 
 `azd up` runs ingestion automatically; run these manually to refresh the corpus later.
 
+## Retrieval store (Postgres)
+
+Retrieval reads pgvector in homelab's Postgres, not Azure AI Search (issue #37, ADR-0021).
+One table per former index in the `rag` schema, cosine HNSW for the dense leg and a
+hand-rolled BM25 in SQL for the lexical one. The service needs one variable:
+
+```bash
+RAG_DATABASE_URL=postgresql://rag_service:<password>@192.168.5.40:5432/rag   # read-only login
+```
+
+Every session it opens is `default_transaction_read_only=on`, whatever the login could do.
+
+The tables are filled from an export of the old indexes, from the laptop, as the owner:
+
+```bash
+RAG_IMPORT_DATABASE_URL=postgresql://rag:<password>@192.168.5.40:5432/rag \
+  uv run python -m ragpipe.pg_import ~/ingest-artifacts/rag/2026-10-24
+```
+
+It checks every file against `manifest.json` (sha256, counts) and refuses on a mismatch,
+re-embeds with `text-embedding-3-small` (the export has no vectors), and prints the embedding
+spend at the end. It's safe to rerun: rows already loaded are skipped, rows the export lacks
+are removed, nothing doubles. `--replace` drops and reloads. It never writes into the export.
+
+Ingest still writes Azure AI Search, so a fresh corpus currently means ingest, export, import.
+Rough, and on the list.
+
+**The rerank modes are offline.** `contextual`, `baseline` and `raptor_sac` end in a
+cross-encoder rerank. Azure's semantic ranker left with the search service and its replacement
+(`bge-reranker-v2-m3` on vLLM on the DGX Spark) isn't serving yet, so `/modes` reports them
+`available: false, reason: "reranker-offline"`, `/run` answers 503, and the eval skips them.
+Everything else runs.
+
+The Postgres tests need a throwaway database and skip without one:
+
+```bash
+docker run -d --name ragpipe-pg-test -e POSTGRES_PASSWORD=test -e POSTGRES_DB=rag \
+  -p 55432:5432 pgvector/pgvector:pg16
+RAG_TEST_DATABASE_URL=postgresql://postgres:test@localhost:55432/rag uv run pytest -q
+```
+
 ## Run
 
 ```bash
@@ -93,14 +136,15 @@ pipeline and the dashboard's pure helper functions.
 uv run uvicorn app.api:app --host 0.0.0.0 --port 8000
 ```
 
-- `POST /run` `{"query": "...", "mode": "contextual"}` → answer, faithfulness, attempt,
+- `POST /run` `{"query": "...", "mode": "graphrag"}` → answer, faithfulness, attempt,
   lowConfidence, abstained, and per-stage chunk tables (`stages` is a dynamic map —
   each substrate names its own stages; the final set is always mirrored under `reranked`).
   `mode` is **required**; an omitted or unknown mode returns 422. The response includes an
   `experimental` flag. Valid modes: `contextual`, `baseline`, `raptor_sac`, `graphrag`,
   `combined`, and the **experimental / unevaluated** agentic variants `baseline_agentic`,
   `raptor_sac_agentic`, `graphrag_agentic`, `combined_agentic` (no committed eval coverage
-  yet — issue #11, ADR-0018).
+  yet — issue #11, ADR-0018). A mode `/modes` reports as unavailable returns 503 with
+  `{"detail": {"mode": ..., "reason": ...}}`.
   The payload also carries `usage`: one entry per metered call the run made, in call order
   (see [Usage reporting](#usage-reporting)).
 - `POST /run/stream` — same body as `/run`; returns a `text/event-stream` (Server-Sent Events).
@@ -109,10 +153,11 @@ uv run uvicorn app.api:app --host 0.0.0.0 --port 8000
   `retrieve.fuse` sub-rounds), then a terminal `event: result` carrying the same payload as
   `/run`, or `event: error` on failure. Drives the dashboard's live step checklist and external
   web clients.
-- `POST /compare` `{"query": "...", "modes": ["contextual", "baseline"]}` → the same payload
-  per mode under `results`.
-- `GET /modes` → the runnable retrieval modes, each with an `experimental` flag, plus an
-  `experimental` list naming the unevaluated `*_agentic` wrappers (issue #11, ADR-0018).
+- `POST /compare` `{"query": "...", "modes": ["graphrag", "combined"]}` → the same payload
+  per mode under `results`. 503 if any listed mode is unavailable.
+- `GET /modes` → every retrieval mode, each with an `experimental` flag and `available` /
+  `reason` (whether it can run right now, issue #35; the rerank modes say `reranker-offline`),
+  plus an `experimental` list naming the unevaluated `*_agentic` wrappers (issue #11, ADR-0018).
 - `GET /eval` → RAGAS metrics from `eval_results.json` (`overall`, `perStage`, `nRecords`).
 - `GET /health` → `{"status":"ok"}`.
 
@@ -127,9 +172,6 @@ own rate for that `deployment`.
   {"stage": "query_embedding", "deployment": "text-embedding-3-small",
    "inputTokens": 9, "cachedInputTokens": null, "outputTokens": null,
    "requestUnits": null, "usageMissing": false},
-  {"stage": "rerank", "deployment": "azure-ai-search-semantic-ranker",
-   "inputTokens": null, "cachedInputTokens": null, "outputTokens": null,
-   "requestUnits": 1, "usageMissing": false},
   {"stage": "generation", "deployment": "gpt-5.4",
    "inputTokens": 2140, "cachedInputTokens": 1024, "outputTokens": 310,
    "requestUnits": null, "usageMissing": false},
@@ -143,8 +185,7 @@ own rate for that `deployment`.
   `code_interpreter`, `faithfulness_judge`.
 - Token calls fill `inputTokens` (total input, cached part included), `outputTokens`, and
   `cachedInputTokens` when the provider reports it. Embeddings have no `outputTokens`.
-- Per-request billing fills `requestUnits` instead: one per semantic ranker query, one per code
-  interpreter session.
+- Per-request billing fills `requestUnits` instead: one per code interpreter session.
 - One entry per call. A guardrail retry adds its own `rerank`, `generation` and judge entries,
   and the judge makes more than one LLM call per score.
 - `usageMissing: true` means the call was made but the provider reported no counts (or the call
@@ -153,7 +194,7 @@ own rate for that `deployment`.
   by `graphrag`, `combined` and the agentic modes. A run with no paid call reports `[]`.
 - A run that fails returns no payload, so its usage is not reported.
 
-Requires the same Azure env vars as the pipeline (see `.env.example`). The service is
+Requires the same Azure env vars as the pipeline plus `RAG_DATABASE_URL` (see `.env.example`). The service is
 intended to sit behind the website's Spring backend, which owns rate-limiting and the
 daily budget cap — do not expose it publicly unguarded.
 
@@ -163,8 +204,9 @@ daily budget cap — do not expose it publicly unguarded.
 uv run python -m ragpipe.eval.run         # offline RAGAS harness over data/testset.jsonl
 
 # Compare retrieval modes side by side (ADR-0016). Each mode is replayed over the
-# same test set; pass a comma-separated subset (default: contextual,baseline):
-uv run python -m ragpipe.eval.run --modes contextual,baseline,raptor_sac,graphrag,combined
+# same test set; pass a comma-separated subset (default: every mode that can run now).
+# A mode /modes reports as unavailable is skipped, not fatal:
+uv run python -m ragpipe.eval.run --modes graphrag,combined,graphrag_agentic
 
 # Also score context_precision/recall at each retrieval stage (the substrate's own
 # stage names, final mirrored as reranked) — heavier (one judge pass per stage):

@@ -2,51 +2,49 @@ from ragpipe.retrieval.bm25 import BM25Retriever
 from ragpipe.retrieval.dense import DenseRetriever
 
 
-class FakeSearchClient:
-    """Mimics azure.search.documents.SearchClient.search()."""
+class FakeTable:
+    """Mimics ragpipe.pgstore.PgTable."""
 
-    def __init__(self, results):
-        self._results = results
-        self.last_kwargs = None
+    def __init__(self, rows):
+        self._rows = rows
+        self.calls = []
 
-    def search(self, search_text=None, **kwargs):
-        self.last_kwargs = {"search_text": search_text, **kwargs}
-        return iter(self._results)
+    def nearest(self, vector, k):
+        self.calls.append(("nearest", vector, k))
+        return self._rows
+
+    def bm25(self, query, k):
+        self.calls.append(("bm25", query, k))
+        return self._rows
 
 
-def _doc(cid, score):
+def _row(cid, score):
     return {
         "id": cid,
         "title": f"title-{cid}",
         "url": f"http://{cid}",
         "content": f"content-{cid}",
-        "@search.score": score,
+        "score": score,
     }
 
 
-def test_bm25_retriever_uses_full_text_only_and_maps_chunks():
-    client = FakeSearchClient([_doc("a", 3.0), _doc("b", 2.0)])
-    retriever = BM25Retriever(client, top_k=5)
+def test_bm25_retriever_runs_a_lexical_query_and_maps_chunks():
+    table = FakeTable([_row("a", 3.0), _row("b", 2.0)])
+    retriever = BM25Retriever(table, top_k=5)
 
     chunks = retriever.retrieve("hybrid search")
 
     assert [c.id for c in chunks] == ["a", "b"]
     assert chunks[0].score == 3.0
-    # BM25 = full-text query, no vector_queries
-    assert client.last_kwargs["search_text"] == "hybrid search"
-    assert "vector_queries" not in client.last_kwargs
+    assert chunks[0].url == "http://a"
+    assert table.calls == [("bm25", "hybrid search", 5)]
 
 
-def test_dense_retriever_issues_vector_query():
-    client = FakeSearchClient([_doc("a", 0.9)])
-    embed = lambda text: [0.1, 0.2, 0.3]  # noqa: E731
-    retriever = DenseRetriever(client, embed_fn=embed, top_k=5)
+def test_dense_retriever_runs_a_vector_query():
+    table = FakeTable([_row("a", 0.9)])
+    retriever = DenseRetriever(table, embed_fn=lambda text: [0.1, 0.2, 0.3], top_k=5)
 
     chunks = retriever.retrieve("hybrid search")
 
     assert [c.id for c in chunks] == ["a"]
-    # dense = vector query, no full-text search_text
-    assert client.last_kwargs["search_text"] is None
-    assert client.last_kwargs["vector_queries"]  # non-empty
-    # Regression: k kwarg (not k_nearest_neighbors) must be passed to VectorizedQuery
-    assert client.last_kwargs["vector_queries"][0].k == 5
+    assert table.calls == [("nearest", [0.1, 0.2, 0.3], 5)]

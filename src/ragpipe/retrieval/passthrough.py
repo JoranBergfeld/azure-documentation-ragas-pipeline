@@ -5,8 +5,8 @@ from ragpipe.models import Chunk
 
 class PassthroughReranker:
     """Rerank by existing candidate score, no external call. Used for substrates
-    whose candidates span multiple indexes and can't use Azure's id-filtered
-    semantic ranker (e.g. GraphRAG)."""
+    whose candidates span several tables, which no single cross-encoder pass over
+    one table covers (e.g. GraphRAG)."""
 
     def __init__(self, top_k: int = 5) -> None:
         self._top_k = top_k

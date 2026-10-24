@@ -10,8 +10,6 @@ def _settings():
         foundry_project_endpoint="https://p.services.ai.azure.com",
         foundry_chat_model="gpt-4o",
         foundry_embedding_model="emb",
-        search_endpoint="https://s.search.windows.net",
-        search_index="idx",
         generator_agent_name="gen",
         testset_mode=TestsetMode.HANDAUTHORED,
     )

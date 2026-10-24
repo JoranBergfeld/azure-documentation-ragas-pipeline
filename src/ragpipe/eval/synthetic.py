@@ -96,14 +96,6 @@ def make_candidates(
     return rows
 
 
-def page_text_from_index(search_client, url: str) -> str:  # pragma: no cover - live Azure
-    """Reassemble a page's text from its indexed chunks (clean content only)."""
-    safe = url.replace("'", "''")
-    results = search_client.search(
-        search_text="*",
-        filter=f"url eq '{safe}'",
-        select=["content", "chunk_id"],
-        top=200,
-    )
-    chunks = sorted(results, key=lambda d: d.get("chunk_id", 0))
-    return "\n\n".join(c["content"] for c in chunks)
+def page_text_from_table(table, url: str) -> str:
+    """Reassemble a page's text from its stored chunks (clean content only)."""
+    return "\n\n".join(c["content"] for c in table.page(url))

@@ -4,7 +4,7 @@ A run reports what it consumed so the caller can price it as usage times a
 dated rate keyed by deployment. This module holds no prices.
 
 Recording happens where the provider response is in hand (the embed call, the
-semantic query, the agent run, the judge's LLM callback). The entries land in
+agent run, the judge's LLM callback). The entries land in
 the list that `collect_usage` binds for the current run; outside a run (ingest,
 scripts) recording is a no-op.
 """
@@ -27,7 +27,6 @@ STAGE_FAITHFULNESS_JUDGE = "faithfulness_judge"
 
 # Billed per request, with no model deployment behind them. These fixed names
 # are what the caller's rate table keys on.
-SEMANTIC_RANKER_DEPLOYMENT = "azure-ai-search-semantic-ranker"
 CODE_INTERPRETER_DEPLOYMENT = "foundry-code-interpreter"
 
 
@@ -119,7 +118,7 @@ def record_tokens(
 
 
 def record_requests(stage: str, deployment: str, units: int = 1) -> None:
-    """Record a call billed per request (e.g. the semantic ranker)."""
+    """Record a call billed per request (e.g. a code interpreter session)."""
     _record(UsageEntry(stage=stage, deployment=deployment, request_units=units))
 
 

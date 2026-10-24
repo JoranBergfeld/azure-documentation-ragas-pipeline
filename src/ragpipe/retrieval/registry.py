@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import Callable, Protocol
 
+from ragpipe import pgstore
 from ragpipe.config import RetrievalMode, Settings
 from ragpipe.retrieval.bm25 import BM25Retriever
 from ragpipe.retrieval.dense import DenseRetriever
@@ -9,19 +10,18 @@ from ragpipe.retrieval.substrate import HybridSubstrate, RetrievalSubstrate
 
 
 class SubstrateCtx(Protocol):
-    def search_client(self, index: str): ...
+    def table(self, spec: pgstore.TableSpec): ...
     def embed(self, text: str) -> list[float]: ...
     def plan(self, query: str) -> list[str]: ...
 
 
-def _hybrid(index_attr: str, name: str):
+def _hybrid(spec: pgstore.TableSpec, name: str):
     def factory(settings: Settings, ctx: SubstrateCtx) -> RetrievalSubstrate:
-        index = getattr(settings, index_attr)
-        client = ctx.search_client(index)
+        table = ctx.table(spec)
         return HybridSubstrate(
             name=name,
-            dense=DenseRetriever(client, ctx.embed, settings.candidate_pool),
-            bm25=BM25Retriever(client, settings.candidate_pool),
+            dense=DenseRetriever(table, ctx.embed, settings.candidate_pool),
+            bm25=BM25Retriever(table, settings.candidate_pool),
             rrf_k=settings.rrf_k,
         )
     return factory
@@ -35,9 +35,9 @@ def _graphrag(settings: Settings, ctx: SubstrateCtx) -> RetrievalSubstrate:
         build_entity_search,
     )
 
-    ent = build_entity_search(ctx.search_client(settings.graph_entities_index), ctx.embed, settings.candidate_pool)
-    com = build_community_search(ctx.search_client(settings.graph_communities_index), ctx.embed, settings.candidate_pool)
-    adjacency = build_adjacency(ctx.search_client(settings.graph_relationships_index))
+    ent = build_entity_search(ctx.table(pgstore.GRAPH_ENTITIES), ctx.embed, settings.candidate_pool)
+    com = build_community_search(ctx.table(pgstore.GRAPH_COMMUNITIES), ctx.embed, settings.candidate_pool)
+    adjacency = build_adjacency(ctx.table(pgstore.GRAPH_RELATIONSHIPS))
     return GraphRAGSubstrate(
         name="graphrag",
         entity_search=ent,
@@ -49,9 +49,9 @@ def _graphrag(settings: Settings, ctx: SubstrateCtx) -> RetrievalSubstrate:
 
 
 _REGISTRY: dict[RetrievalMode, Callable[[Settings, SubstrateCtx], RetrievalSubstrate]] = {
-    RetrievalMode.CONTEXTUAL: _hybrid("search_index", "contextual"),
-    RetrievalMode.BASELINE: _hybrid("baseline_index", "baseline"),
-    RetrievalMode.RAPTOR_SAC: _hybrid("raptor_sac_index", "raptor_sac"),
+    RetrievalMode.CONTEXTUAL: _hybrid(pgstore.MS_DOCS, "contextual"),
+    RetrievalMode.BASELINE: _hybrid(pgstore.BASELINE, "baseline"),
+    RetrievalMode.RAPTOR_SAC: _hybrid(pgstore.RAPTOR_SAC, "raptor_sac"),
     RetrievalMode.GRAPHRAG: _graphrag,
 }
 

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Awaitable, Callable
 
-from ragpipe.config import Settings
+from ragpipe.config import ModeUnavailable, RetrievalMode, Settings, unavailable_reason
 from ragpipe.models import PipelineState
 from ragpipe.workflow import PipelineDeps, run_pipeline
 
@@ -29,6 +29,18 @@ def make_deps(settings, retrieve, reranker, generator, scorer) -> PipelineDeps:
     )
 
 
+_pools: dict[str, object] = {}
+
+
+def _table_pool(database_url: str):  # pragma: no cover - needs a database
+    """One read-only pool per database, shared by every mode's pipeline."""
+    from ragpipe.pgstore import open_pool
+
+    if database_url not in _pools:
+        _pools[database_url] = open_pool(database_url)
+    return _pools[database_url]
+
+
 def build_pipeline_fn(
     settings: Settings,
     *,
@@ -37,19 +49,23 @@ def build_pipeline_fn(
     from functools import lru_cache
 
     from azure.identity import DefaultAzureCredential
-    from azure.search.documents import SearchClient
     from agent_framework.foundry import FoundryAgent
 
-    from ragpipe.config import RetrievalMode
     from ragpipe.embeddings import build_embed_fn
     from ragpipe.generate import Generator
     from ragpipe.guardrail import FaithfulnessScorer, build_ragas_faithfulness
+    from ragpipe.pgstore import PgTable
+    from ragpipe.retrieval.passthrough import PassthroughReranker
     from ragpipe.retrieval.registry import build_substrate
-    from ragpipe.retrieval.rerank import SemanticReranker
-    from ragpipe.search_index import SEMANTIC_CONFIG_NAME
 
-    if isinstance(mode, str):
-        mode = RetrievalMode(mode)
+    mode = RetrievalMode(mode)
+    reason = unavailable_reason(mode)
+    if reason is not None:
+        raise ModeUnavailable(mode, reason)
+    if not settings.rag_database_url:
+        raise ValueError("Required environment variable RAG_DATABASE_URL is not set")
+    pool = _table_pool(settings.rag_database_url)
+    # Generation and embeddings only: retrieval no longer touches Azure (ADR-0021).
     cred = DefaultAzureCredential()
     embed_raw = build_embed_fn(settings)
 
@@ -60,15 +76,11 @@ def build_pipeline_fn(
     def embed(text: str) -> list[float]:
         return list(_embed_cached(text))
 
-    _clients: dict[str, SearchClient] = {}
-
     complete_fn = None  # built lazily inside plan()
 
     class _Ctx:
-        def search_client(self, index: str):
-            if index not in _clients:
-                _clients[index] = SearchClient(settings.search_endpoint, index, cred)
-            return _clients[index]
+        def table(self, spec):
+            return PgTable(pool, spec)
 
         def embed(self, text: str):
             return embed(text)
@@ -104,29 +116,11 @@ def build_pipeline_fn(
     ctx = _Ctx()
     substrate = build_substrate(mode, settings, ctx)
 
-    def _uses_passthrough(name: str) -> bool:
-        return name in {"graphrag", "combined"} or name.endswith("_agentic")
-
-    # GraphRAG and combined fuse candidates from multiple heterogeneous indexes;
-    # Azure's id-filtered semantic reranker can't span them. Agentic substrates
-    # wrap these same modes. All use PassthroughReranker (score-sorted truncation).
-    if _uses_passthrough(substrate.name):
-        from ragpipe.retrieval.passthrough import PassthroughReranker
-        reranker = PassthroughReranker(settings.top_k)
-    else:
-        # The reranker re-scores within whatever the substrate returns, using the
-        # substrate's own index for the hybrid stage-1 retrieval.
-        rerank_index_attr = {
-            "contextual": "search_index",
-            "baseline": "baseline_index",
-            "raptor_sac": "raptor_sac_index",
-        }.get(substrate.name, "search_index")
-        reranker = SemanticReranker(
-            ctx.search_client(getattr(settings, rerank_index_attr)),
-            SEMANTIC_CONFIG_NAME,
-            settings.top_k,
-            embed_fn=embed,
-        )
+    # Every mode that can run today ranks by its own candidate score: graphrag and
+    # combined fuse heterogeneous tables no single cross-encoder pass spans, and
+    # the agentic wrappers wrap those. The modes that need a real reranker are
+    # refused above until one serves (RERANK_MODES).
+    reranker = PassthroughReranker(settings.top_k)
 
     agent = FoundryAgent(
         project_endpoint=settings.foundry_project_endpoint,

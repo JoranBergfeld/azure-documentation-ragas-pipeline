@@ -10,12 +10,10 @@ Usage:
 import argparse
 import json
 
-from azure.identity import DefaultAzureCredential
-from azure.search.documents import SearchClient
-
 from ragpipe.config import Settings
-from ragpipe.eval.synthetic import make_candidates, page_text_from_index
+from ragpipe.eval.synthetic import make_candidates, page_text_from_table
 from ragpipe.foundry_judge import build_judge_complete_fn
+from ragpipe.pgstore import MS_DOCS, PgTable, open_pool
 
 
 def main() -> None:
@@ -25,16 +23,14 @@ def main() -> None:
     args = parser.parse_args()
 
     settings = Settings.from_env()
-    search = SearchClient(
-        settings.search_endpoint, settings.search_index, DefaultAzureCredential()
-    )
+    table = PgTable(open_pool(settings.rag_database_url), MS_DOCS)
     complete = build_judge_complete_fn(settings)
 
     rows = []
     for url in args.urls:
-        document = page_text_from_index(search, url)
+        document = page_text_from_table(table, url)
         if not document:
-            print(f"-- no indexed chunks for {url}; skipped", flush=True)
+            print(f"-- no stored chunks for {url}; skipped", flush=True)
             continue
         rows.extend(make_candidates(complete, url=url, document=document, n=args.per_page))
     print(json.dumps(rows, indent=2))

@@ -5,7 +5,7 @@ import math
 from pathlib import Path
 from typing import Any, Awaitable, Callable
 
-from fastapi import Depends, FastAPI
+from fastapi import Depends, FastAPI, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
@@ -15,14 +15,14 @@ from app.dashboard import (
     per_stage_chart_data,
     stage_chunk_tables,
 )
-from ragpipe.config import RetrievalMode, Settings, is_experimental_mode
+from ragpipe.config import RetrievalMode, Settings, is_experimental_mode, unavailable_reason
 from ragpipe.retrieval.registry import registered_modes
 from ragpipe.models import PipelineState
 from ragpipe.streaming import pipeline_event_stream
 
 app = FastAPI(title="ragpipe API")
 
-# Per-mode cache — building Azure clients is expensive so we reuse per mode.
+# Per-mode cache — building the clients is expensive so we reuse per mode.
 _pipeline_fns: dict[str, Callable[..., Awaitable[PipelineState]]] = {}
 
 
@@ -79,6 +79,14 @@ def _state_payload(mode: str, state: PipelineState) -> dict[str, Any]:
     }
 
 
+def _require_available(*modes: RetrievalMode) -> None:
+    """503 for a mode /modes reports as unavailable, before anything is built."""
+    for mode in modes:
+        reason = unavailable_reason(mode)
+        if reason is not None:
+            raise HTTPException(status_code=503, detail={"mode": mode.value, "reason": reason})
+
+
 def _sse(event: str, data: dict) -> str:
     return f"event: {event}\ndata: {json.dumps(_json_safe(data))}\n\n"
 
@@ -92,14 +100,14 @@ def health() -> dict[str, str]:
 def modes() -> dict[str, Any]:
     """Discoverable contract for the runnable retrieval modes. ``experimental`` flags
     the ``*_agentic`` wrappers, which are exposed without eval coverage (issue #11).
-    ``available``/``reason`` say whether a mode can run right now; nothing can take a
-    mode offline yet, so every mode is available (issue #35)."""
+    ``available``/``reason`` say whether a mode can run right now (issue #35): the
+    rerank modes are ``reranker-offline`` until the Spark serves the reranker (#37)."""
     items = [
         {
             "mode": m.value,
             "experimental": is_experimental_mode(m),
-            "available": True,
-            "reason": None,
+            "available": unavailable_reason(m) is None,
+            "reason": unavailable_reason(m),
         }
         for m in registered_modes()
     ]
@@ -116,6 +124,7 @@ async def run(
         get_pipeline_fn_for_mode
     ),
 ) -> dict[str, Any]:
+    _require_available(req.mode)
     pipeline_fn = await factory(req.mode)
     state = await pipeline_fn(req.query)
     return _state_payload(req.mode, state)
@@ -128,6 +137,7 @@ async def run_stream(
         get_pipeline_fn_for_mode
     ),
 ) -> StreamingResponse:
+    _require_available(req.mode)
     pipeline_fn = await factory(req.mode)
 
     async def frames():
@@ -149,6 +159,7 @@ async def compare(
         get_pipeline_fn_for_mode
     ),
 ) -> dict[str, Any]:
+    _require_available(*req.modes)
     results = []
     for mode in req.modes:
         pipeline_fn = await factory(mode)

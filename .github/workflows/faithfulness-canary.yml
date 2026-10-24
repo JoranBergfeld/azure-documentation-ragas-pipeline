@@ -7,7 +7,7 @@ name: faithfulness-canary
 #
 # Disabled until set up: this job needs Azure access, so it only runs when the
 # repository variable CANARY_ENABLED is "true" and the AZURE_* secrets +
-# FOUNDRY/SEARCH vars below are configured. Without them it is a no-op (forks stay
+# FOUNDRY vars below are configured. Without them it is a no-op (forks stay
 # green).
 on:
   schedule:
@@ -32,8 +32,6 @@ jobs:
       FOUNDRY_PROJECT_ENDPOINT: ${{ vars.FOUNDRY_PROJECT_ENDPOINT }}
       FOUNDRY_CHAT_MODEL: ${{ vars.FOUNDRY_CHAT_MODEL }}
       FOUNDRY_EMBEDDING_MODEL: ${{ vars.FOUNDRY_EMBEDDING_MODEL }}
-      SEARCH_ENDPOINT: ${{ vars.SEARCH_ENDPOINT }}
-      SEARCH_INDEX: ${{ vars.SEARCH_INDEX }}
       GENERATOR_AGENT_NAME: ${{ vars.GENERATOR_AGENT_NAME }}
       GENERATOR_AGENT_VERSION: ${{ vars.GENERATOR_AGENT_VERSION }}
       JUDGE_MODEL: ${{ vars.JUDGE_MODEL }}

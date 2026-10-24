@@ -44,6 +44,31 @@ def is_experimental_mode(mode: "RetrievalMode | str") -> bool:
     return any(value == m.value for m in EXPERIMENTAL_MODES)
 
 
+# Modes whose last retrieval step is a cross-encoder rerank over one table. Azure's
+# semantic ranker went with the search service (issue #37, ADR-0021) and its
+# replacement, bge-reranker-v2-m3 on vLLM on the DGX Spark, isn't serving yet. Until
+# it is these can't run, and /modes says so. Running them without a reranker would
+# change what their eval numbers describe, so they're offline rather than degraded.
+RERANK_MODES: frozenset[RetrievalMode] = frozenset(
+    {RetrievalMode.CONTEXTUAL, RetrievalMode.BASELINE, RetrievalMode.RAPTOR_SAC}
+)
+RERANKER_OFFLINE = "reranker-offline"
+
+
+def unavailable_reason(mode: "RetrievalMode | str") -> str | None:
+    """Why a mode can't run right now, or None when it can."""
+    if RetrievalMode(mode) in RERANK_MODES:
+        return RERANKER_OFFLINE
+    return None
+
+
+class ModeUnavailable(RuntimeError):
+    def __init__(self, mode: "RetrievalMode | str", reason: str) -> None:
+        self.mode = RetrievalMode(mode).value
+        self.reason = reason
+        super().__init__(f"mode {self.mode!r} is unavailable: {reason}")
+
+
 def _require(name: str) -> str:
     value = os.environ.get(name)
     if not value:
@@ -56,8 +81,6 @@ class Settings:
     foundry_project_endpoint: str
     foundry_chat_model: str
     foundry_embedding_model: str
-    search_endpoint: str
-    search_index: str
     generator_agent_name: str
     generator_agent_version: str | None = None
     faithfulness_threshold: float = 0.7
@@ -77,12 +100,10 @@ class Settings:
     # Candidate pool per retrieval leg (dense/bm25) before RRF fusion. Wider than
     # top_k so guardrail retries can widen the rerank window over real candidates.
     candidate_pool: int = 15
-    # Per-substrate index names. `search_index` stays the default contextual index.
-    baseline_index: str = "baseline"
-    raptor_sac_index: str = "raptor-sac"
-    graph_entities_index: str = "graph-entities"
-    graph_relationships_index: str = "graph-relationships"
-    graph_communities_index: str = "graph-communities"
+    # Retrieval's Postgres (ADR-0021). The service gets a read-only login; the
+    # import runs as the owner. Optional so the canary and the judge scripts,
+    # which never retrieve, don't need it. Wiring a pipeline refuses without it.
+    rag_database_url: str | None = None
     # Route GraphRAG's global community-summary leg by query class instead of
     # always RRF-fusing it (issue #8, ADR-0018). When True, the global leg fires
     # only for sensemaking/breadth queries; factoid queries stay local-only. Set
@@ -115,8 +136,6 @@ class Settings:
             foundry_project_endpoint=_require("FOUNDRY_PROJECT_ENDPOINT"),
             foundry_chat_model=_require("FOUNDRY_CHAT_MODEL"),
             foundry_embedding_model=_require("FOUNDRY_EMBEDDING_MODEL"),
-            search_endpoint=_require("SEARCH_ENDPOINT"),
-            search_index=_require("SEARCH_INDEX"),
             generator_agent_name=_require("GENERATOR_AGENT_NAME"),
             generator_agent_version=os.environ.get("GENERATOR_AGENT_VERSION"),
             faithfulness_threshold=float(os.environ.get("FAITHFULNESS_THRESHOLD", "0.7")),
@@ -129,11 +148,7 @@ class Settings:
             judge_model=os.environ.get("JUDGE_MODEL") or None,
             offline_judge_model=os.environ.get("OFFLINE_JUDGE_MODEL") or None,
             candidate_pool=int(os.environ.get("CANDIDATE_POOL", "15")),
-            baseline_index=os.environ.get("BASELINE_INDEX", "baseline"),
-            raptor_sac_index=os.environ.get("RAPTOR_SAC_INDEX", "raptor-sac"),
-            graph_entities_index=os.environ.get("GRAPH_ENTITIES_INDEX", "graph-entities"),
-            graph_relationships_index=os.environ.get("GRAPH_RELATIONSHIPS_INDEX", "graph-relationships"),
-            graph_communities_index=os.environ.get("GRAPH_COMMUNITIES_INDEX", "graph-communities"),
+            rag_database_url=os.environ.get("RAG_DATABASE_URL") or None,
             graph_query_routing=os.environ.get("GRAPH_QUERY_ROUTING", "true").lower()
             in ("1", "true", "yes"),
             agentic_max_iterations=int(os.environ.get("AGENTIC_MAX_ITERATIONS", "3")),
