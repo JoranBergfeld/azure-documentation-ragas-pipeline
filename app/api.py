@@ -91,9 +91,16 @@ def health() -> dict[str, str]:
 @app.get("/modes")
 def modes() -> dict[str, Any]:
     """Discoverable contract for the runnable retrieval modes. ``experimental`` flags
-    the ``*_agentic`` wrappers, which are exposed without eval coverage (issue #11)."""
+    the ``*_agentic`` wrappers, which are exposed without eval coverage (issue #11).
+    ``available``/``reason`` say whether a mode can run right now; nothing can take a
+    mode offline yet, so every mode is available (issue #35)."""
     items = [
-        {"mode": m.value, "experimental": is_experimental_mode(m)}
+        {
+            "mode": m.value,
+            "experimental": is_experimental_mode(m),
+            "available": True,
+            "reason": None,
+        }
         for m in registered_modes()
     ]
     return {

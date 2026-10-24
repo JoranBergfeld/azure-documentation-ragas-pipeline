@@ -500,3 +500,14 @@ def test_modes_lists_all_modes_with_experimental_flags(client):
         "graphrag_agentic",
         "combined_agentic",
     }
+
+
+def test_modes_says_every_mode_can_run(client):
+    # personal-website's RagModesContract rejects an item missing any of these
+    # keys, even when reason is null (issue #35).
+    res = client.get("/modes")
+    assert res.status_code == 200
+    for item in res.json()["modes"]:
+        assert set(item) >= {"mode", "experimental", "available", "reason"}
+        assert item["available"] is True
+        assert item["reason"] is None
