@@ -12,8 +12,6 @@ def test_phase1_modes_registered():
 
 
 class _FakeSettings:
-    search_index = "ms-docs"
-    baseline_index = "baseline"
     candidate_pool = 15
     rrf_k = 60
     top_k = 5
@@ -21,7 +19,7 @@ class _FakeSettings:
 
 def test_build_substrate_returns_substrate():
     class _Ctx:
-        def search_client(self, index):
+        def table(self, spec):
             return object()
 
         def embed(self, text):
@@ -38,24 +36,25 @@ def test_raptor_sac_mode_registered():
     assert RetrievalMode.RAPTOR_SAC in registered_modes()
 
 
-def test_build_raptor_sac_substrate_uses_raptor_index():
+def test_build_raptor_sac_substrate_uses_raptor_table():
     from ragpipe.config import RetrievalMode
     from ragpipe.retrieval.registry import build_substrate
 
     class _Settings:
-        search_index = "ms-docs"
-        baseline_index = "baseline"
-        raptor_sac_index = "raptor-sac"
         candidate_pool = 15
         rrf_k = 60
         top_k = 5
 
     class _Ctx:
-        def search_client(self, index): return object()
+        seen: list[str] = []
+        def table(self, spec):
+            _Ctx.seen.append(spec.table)
+            return object()
         def embed(self, text): return [0.0]
 
     sub = build_substrate(RetrievalMode.RAPTOR_SAC, settings=_Settings(), ctx=_Ctx())
     assert sub.name == "raptor_sac"
+    assert _Ctx.seen == ["raptor_sac"]
 
 
 def test_graphrag_mode_registered():
@@ -81,24 +80,18 @@ def test_every_mode_builds_with_fake_ctx():
     from ragpipe.retrieval.registry import build_substrate
 
     class _Settings:
-        search_index = "ms-docs"
-        baseline_index = "baseline"
-        raptor_sac_index = "raptor-sac"
-        graph_entities_index = "ge"
-        graph_relationships_index = "gr"
-        graph_communities_index = "gc"
         candidate_pool = 15
         rrf_k = 60
         top_k = 5
         agentic_max_iterations = 3
 
-    class _Search:
-        def search(self, *a, **k):
+    class _Table:
+        def scan(self):
             return []
 
     class _Ctx:
-        def search_client(self, index):
-            return _Search()
+        def table(self, spec):
+            return _Table()
 
         def embed(self, text):
             return [0.0]

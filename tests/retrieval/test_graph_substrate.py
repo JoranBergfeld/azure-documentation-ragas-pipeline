@@ -95,28 +95,63 @@ async def test_graph_substrate_accepts_injected_classifier():
     assert "community-1" in {c.id for c in result.candidates}
 
 
-class _FakeSearchClient:
-    def __init__(self, hits):
-        self._hits = hits
+class _FakeTable:
+    def __init__(self, dense, lexical=(), scan=()):
+        self._dense = list(dense)
+        self._lexical = list(lexical)
+        self._scan = list(scan)
 
-    def search(self, *args, **kwargs):
-        self._select = kwargs.get("select")
-        return iter(self._hits)
+    def nearest(self, vector, k):
+        return self._dense[:k]
+
+    def bm25(self, query, k):
+        return self._lexical[:k]
+
+    def scan(self):
+        return self._scan
 
 
 def test_community_search_populates_url_from_source_urls():
     from ragpipe.retrieval.graph_substrate import build_community_search
 
-    client = _FakeSearchClient([
+    table = _FakeTable([
         {"id": "community-0", "title": "Compute", "summary": "Compute services",
          "source_urls": ["https://learn.microsoft.com/azure/functions", "https://learn.microsoft.com/azure/blob"],
-         "@search.score": 0.7},
-        {"id": "community-1", "title": "Empty", "summary": "No sources", "@search.score": 0.3},
+         "score": 0.7},
+        {"id": "community-1", "title": "Empty", "summary": "No sources", "source_urls": [], "score": 0.3},
     ])
-    com = build_community_search(client, embed_fn=lambda q: [0.1, 0.2], k=5)
+    com = build_community_search(table, embed_fn=lambda q: [0.1, 0.2], k=5)
     chunks = com.search_communities("query", 5)
-    assert "source_urls" in client._select
     # First source URL is surfaced as the chunk URL so @global is URL-scorable.
     assert chunks[0].url == "https://learn.microsoft.com/azure/functions"
     # A community with no source URLs degrades gracefully to an empty URL.
     assert chunks[1].url == ""
+
+
+def test_entity_search_fuses_vector_and_lexical_hits():
+    from ragpipe.retrieval.graph_substrate import build_entity_search
+
+    def ent(i):
+        return {"id": f"entity-{i}", "name": f"E{i}", "type": "service",
+                "description": f"d{i}", "source_urls": [f"https://x/{i}"], "score": 1.0}
+
+    # entity-2 is second on both legs, so RRF puts it ahead of either leg's winner.
+    table = _FakeTable(dense=[ent(1), ent(2)], lexical=[ent(3), ent(2)])
+    ents = build_entity_search(table, embed_fn=lambda q: [0.0], k=2)
+    chunks = ents.search_entities("q", 2)
+    assert [c.id for c in chunks] == ["entity-2", "entity-1"]
+    assert chunks[0].title == "E2"
+    assert chunks[0].content == "E2 (service): d2"
+
+
+def test_build_adjacency_registers_each_edge_under_both_ends():
+    from ragpipe.retrieval.graph_substrate import build_adjacency
+
+    table = _FakeTable([], scan=[
+        {"id": "rel-1", "source": "Azure Functions", "target": "Durable Task",
+         "description": "uses", "weight": 9.0, "source_urls": ["https://x/f"]},
+    ])
+    adjacency = build_adjacency(table)
+    assert set(adjacency) == {"AZURE FUNCTIONS", "DURABLE TASK"}
+    edge = adjacency["DURABLE TASK"][0]
+    assert (edge.id, edge.score, edge.url) == ("rel-1", 9.0, "https://x/f")

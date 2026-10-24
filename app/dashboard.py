@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 from typing import Any
 
-from ragpipe.config import is_experimental_mode
+from ragpipe.config import is_experimental_mode, unavailable_reason
 from ragpipe.models import PipelineState
 from ragpipe.retrieval.registry import registered_modes
 
@@ -21,8 +21,9 @@ ARCHITECTURE_DIAGRAMS = (
 
 
 def mode_options() -> list[str]:
-    """Runnable retrieval modes in registry order, for the Run-tab selector."""
-    return [m.value for m in registered_modes()]
+    """Runnable retrieval modes in registry order, for the Run-tab selector.
+    Modes that can't run right now (the rerank modes, issue #37) are left out."""
+    return [m.value for m in registered_modes() if unavailable_reason(m) is None]
 
 
 def is_agentic_mode(mode: str) -> bool:

@@ -147,6 +147,7 @@ def build_batch_embed_fn(
     timeout: float = 60.0,
     max_retries: int = 10,
     max_inputs_per_request: int = 512,
+    on_tokens: Callable[[int], None] | None = None,
 ) -> Callable[[list[str]], list[list[float]]]:  # pragma: no cover - live Azure call
     """Return `embed_batch(texts) -> list[vector]` sending many inputs per request.
 
@@ -160,6 +161,9 @@ def build_batch_embed_fn(
     (e.g. tens of thousands of graph entity/relationship descriptions) is split
     into several modestly-sized requests instead of one oversized request that
     would blow past the array cap and the per-minute token limit.
+
+    ``on_tokens`` gets each request's billed prompt tokens, for callers that
+    report their own spend (the Postgres import).
     """
     client = _build_client(settings, api_version, timeout, max_retries)
 
@@ -167,6 +171,8 @@ def build_batch_embed_fn(
         result = client.embeddings.create(
             model=settings.foundry_embedding_model, input=sub
         )
+        if on_tokens is not None:
+            on_tokens(result.usage.prompt_tokens)
         ordered = sorted(result.data, key=lambda d: d.index)
         return [list(d.embedding) for d in ordered]
 

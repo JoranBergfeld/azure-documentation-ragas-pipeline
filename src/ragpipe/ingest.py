@@ -12,6 +12,24 @@ from bs4 import BeautifulSoup
 
 from ragpipe.chunking import chunk_markdown
 from ragpipe.extraction import html_to_markdown
+from ragpipe.pgstore import (
+    BASELINE,
+    GRAPH_COMMUNITIES,
+    GRAPH_ENTITIES,
+    GRAPH_RELATIONSHIPS,
+    MS_DOCS,
+    RAPTOR_SAC,
+)
+
+
+def _search_endpoint() -> str:  # pragma: no cover - env
+    """Ingest still writes Azure AI Search. Retrieval reads Postgres since #37
+    (ADR-0021), so a fresh ingest lands nowhere the pipeline looks until it's
+    exported and imported, or ingest learns to write Postgres itself."""
+    endpoint = os.environ.get("SEARCH_ENDPOINT")
+    if not endpoint:
+        raise SystemExit("ingest writes Azure AI Search: set SEARCH_ENDPOINT")
+    return endpoint
 
 
 def _doc_id(url: str, index: int) -> str:
@@ -262,13 +280,13 @@ def main(limit: int | None = None) -> None:  # pragma: no cover - integration en
         raise SystemExit("No pages fetched; nothing to ingest.")
 
     first_vec = embed_batch([pages[0]["markdown"][:100]])[0]
-    index_client = SearchIndexClient(settings.search_endpoint, cred)
-    create_index(index_client, settings.search_index, vector_dimensions=len(first_vec))
+    index_client = SearchIndexClient(_search_endpoint(), cred)
+    create_index(index_client, MS_DOCS.index, vector_dimensions=len(first_vec))
 
     docs = build_documents(pages, embed_batch_fn=embed_batch, context_fn=context_gen.generate)
     if context_gen.fallback_count:
         print(f"  context fallbacks (breadcrumb-only): {context_gen.fallback_count}", flush=True)
-    search_client = SearchClient(settings.search_endpoint, settings.search_index, cred)
+    search_client = SearchClient(_search_endpoint(), MS_DOCS.index, cred)
     _upload_in_batches(search_client, docs)
     if limit is not None:
         # Partial ingest (smoke run): pruning against a partial fresh set would
@@ -278,7 +296,7 @@ def main(limit: int | None = None) -> None:  # pragma: no cover - integration en
     pruned = prune_stale_documents(search_client, fresh_ids={d["id"] for d in docs})
     print(
         f"Uploaded {len(docs)} chunks from {len(pages)} pages "
-        f"to index '{settings.search_index}' (pruned {pruned} stale chunks)."
+        f"to index '{MS_DOCS.index}' (pruned {pruned} stale chunks)."
     )
 
 
@@ -309,7 +327,7 @@ def build_raptor(settings: Any, limit: int | None = None) -> None:  # pragma: no
 
     Mirrors build_baseline but builds the full RAPTOR tree on top of the SAC
     (situating-context + embedding) leaf docs and uploads both leaves and summaries
-    to settings.raptor_sac_index with include_level=True.
+    to RAPTOR_SAC.index with include_level=True.
     """
     import sys
 
@@ -388,20 +406,20 @@ def build_raptor(settings: Any, limit: int | None = None) -> None:  # pragma: no
 
     # 5. Create/update the RAPTOR SAC index with include_level=True
     dims = len(leaf_docs[0]["content_vector"])
-    index_client = SearchIndexClient(settings.search_endpoint, cred)
+    index_client = SearchIndexClient(_search_endpoint(), cred)
     index_client.create_or_update_index(
-        build_index(settings.raptor_sac_index, dims, include_context=True, include_level=True)
+        build_index(RAPTOR_SAC.index, dims, include_context=True, include_level=True)
     )
 
     # 6. Upload leaves + summaries; prune stale (skip on partial ingest)
     docs = leaf_docs + raptor_summary_documents(summaries)
-    search_client = SearchClient(settings.search_endpoint, settings.raptor_sac_index, cred)
+    search_client = SearchClient(_search_endpoint(), RAPTOR_SAC.index, cred)
     _upload_in_batches(search_client, docs)
 
     if limit is not None:
         print(
             f"Uploaded {len(leaf_docs)} leaves + {len(summaries)} summary nodes "
-            f"to index '{settings.raptor_sac_index}' (limit={limit}, prune skipped).",
+            f"to index '{RAPTOR_SAC.index}' (limit={limit}, prune skipped).",
             flush=True,
         )
         return
@@ -409,7 +427,7 @@ def build_raptor(settings: Any, limit: int | None = None) -> None:  # pragma: no
     pruned = prune_stale_documents(search_client, fresh_ids={d["id"] for d in docs})
     print(
         f"Uploaded {len(leaf_docs)} leaves + {len(summaries)} summary nodes "
-        f"to index '{settings.raptor_sac_index}' (pruned {pruned} stale).",
+        f"to index '{RAPTOR_SAC.index}' (pruned {pruned} stale).",
         flush=True,
     )
 
@@ -418,7 +436,7 @@ def build_baseline(settings: Any, limit: int | None = None) -> None:  # pragma: 
     """Ingest the plain-chunk baseline index (no contextual decoration).
 
     Mirrors main() but uses build_baseline_documents and targets
-    settings.baseline_index with include_context=False.
+    BASELINE.index with include_context=False.
     """
     import yaml
     from azure.identity import DefaultAzureCredential
@@ -442,14 +460,14 @@ def build_baseline(settings: Any, limit: int | None = None) -> None:  # pragma: 
     first_vec = embed_batch([pages[0]["markdown"][:100]])[0]
     dims = len(first_vec)
 
-    index_client = SearchIndexClient(settings.search_endpoint, cred)
+    index_client = SearchIndexClient(_search_endpoint(), cred)
     # Reuse create_index (which calls build_index internally) but we need
     # include_context=False. create_index is a thin wrapper; call build_index
     # directly and use create_or_update_index.
     from ragpipe.search_index import build_index
 
     index_client.create_or_update_index(
-        build_index(settings.baseline_index, dims, include_context=False)
+        build_index(BASELINE.index, dims, include_context=False)
     )
 
     # Build docs: embed_fn takes a single string; wrap embed_batch for this.
@@ -458,7 +476,7 @@ def build_baseline(settings: Any, limit: int | None = None) -> None:  # pragma: 
 
     docs = build_baseline_documents(pages, embed_fn=_embed_one)
 
-    search_client = SearchClient(settings.search_endpoint, settings.baseline_index, cred)
+    search_client = SearchClient(_search_endpoint(), BASELINE.index, cred)
     _upload_in_batches(search_client, docs)
     if limit is not None:
         print(f"Uploaded {len(docs)} chunks from {len(pages)} pages (limit={limit}, prune skipped).")
@@ -466,7 +484,7 @@ def build_baseline(settings: Any, limit: int | None = None) -> None:  # pragma: 
     pruned = prune_stale_documents(search_client, fresh_ids={d["id"] for d in docs})
     print(
         f"Uploaded {len(docs)} chunks from {len(pages)} pages "
-        f"to index '{settings.baseline_index}' (pruned {pruned} stale chunks)."
+        f"to index '{BASELINE.index}' (pruned {pruned} stale chunks)."
     )
 
 
@@ -520,28 +538,28 @@ def _finish_graph(
 
     # Create the three indexes.
     dims = len(ent_docs[0]["description_vector"])
-    index_client = SearchIndexClient(settings.search_endpoint, cred)
-    index_client.create_or_update_index(build_entities_index(settings.graph_entities_index, dims))
-    index_client.create_or_update_index(build_relationships_index(settings.graph_relationships_index, dims))
-    index_client.create_or_update_index(build_communities_index(settings.graph_communities_index, dims))
+    index_client = SearchIndexClient(_search_endpoint(), cred)
+    index_client.create_or_update_index(build_entities_index(GRAPH_ENTITIES.index, dims))
+    index_client.create_or_update_index(build_relationships_index(GRAPH_RELATIONSHIPS.index, dims))
+    index_client.create_or_update_index(build_communities_index(GRAPH_COMMUNITIES.index, dims))
 
     # Upload each doc set (batched + retried inside _upload_in_batches).
-    ent_client = SearchClient(settings.search_endpoint, settings.graph_entities_index, cred)
-    rel_client = SearchClient(settings.search_endpoint, settings.graph_relationships_index, cred)
-    com_client = SearchClient(settings.search_endpoint, settings.graph_communities_index, cred)
+    ent_client = SearchClient(_search_endpoint(), GRAPH_ENTITIES.index, cred)
+    rel_client = SearchClient(_search_endpoint(), GRAPH_RELATIONSHIPS.index, cred)
+    com_client = SearchClient(_search_endpoint(), GRAPH_COMMUNITIES.index, cred)
 
-    print(f"Uploading {len(ent_docs)} entity docs to '{settings.graph_entities_index}'…", flush=True)
+    print(f"Uploading {len(ent_docs)} entity docs to '{GRAPH_ENTITIES.index}'…", flush=True)
     _upload_in_batches(ent_client, ent_docs)
-    print(f"Uploading {len(rel_docs)} relationship docs to '{settings.graph_relationships_index}'…", flush=True)
+    print(f"Uploading {len(rel_docs)} relationship docs to '{GRAPH_RELATIONSHIPS.index}'…", flush=True)
     _upload_in_batches(rel_client, rel_docs)
-    print(f"Uploading {len(com_docs)} community docs to '{settings.graph_communities_index}'…", flush=True)
+    print(f"Uploading {len(com_docs)} community docs to '{GRAPH_COMMUNITIES.index}'…", flush=True)
     _upload_in_batches(com_client, com_docs)
 
     print(
         f"build_graph done: {len(entities)} entities, {len(relationships)} relationships, "
         f"{len(communities)} communities → indexes "
-        f"'{settings.graph_entities_index}', '{settings.graph_relationships_index}', "
-        f"'{settings.graph_communities_index}'.",
+        f"'{GRAPH_ENTITIES.index}', '{GRAPH_RELATIONSHIPS.index}', "
+        f"'{GRAPH_COMMUNITIES.index}'.",
         flush=True,
     )
 

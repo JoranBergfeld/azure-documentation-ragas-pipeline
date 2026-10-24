@@ -55,7 +55,7 @@ def test_run_returns_answer_and_stages(client):
 
     api.app.dependency_overrides[api.get_pipeline_fn_for_mode] = _make_factory(fake_pipeline)
     try:
-        res = client.post("/run", json={"query": "what is RRF?", "mode": "contextual"})
+        res = client.post("/run", json={"query": "what is RRF?", "mode": "graphrag"})
     finally:
         api.app.dependency_overrides.clear()
 
@@ -98,7 +98,7 @@ def test_run_reports_abstention():
 
     api.app.dependency_overrides[api.get_pipeline_fn_for_mode] = _make_factory(fake_pipeline)
     try:
-        resp = TestClient(api.app).post("/run", json={"query": "x", "mode": "contextual"})
+        resp = TestClient(api.app).post("/run", json={"query": "x", "mode": "graphrag"})
         assert resp.status_code == 200
         assert resp.json()["abstained"] is True
     finally:
@@ -126,17 +126,17 @@ def _fake_state(mode: str) -> PipelineState:
 
 def test_run_with_explicit_mode():
     async def fake_pipeline(q: str) -> PipelineState:
-        return _fake_state("baseline")
+        return _fake_state("graphrag")
 
     api.app.dependency_overrides[api.get_pipeline_fn_for_mode] = _make_factory(fake_pipeline)
     try:
-        resp = TestClient(api.app).post("/run", json={"query": "q", "mode": "baseline"})
+        resp = TestClient(api.app).post("/run", json={"query": "q", "mode": "graphrag"})
     finally:
         api.app.dependency_overrides.clear()
 
     assert resp.status_code == 200
     body = resp.json()
-    assert body["mode"] == "baseline"
+    assert body["mode"] == "graphrag"
     assert "answer" in body
 
 
@@ -160,14 +160,14 @@ def test_compare_runs_multiple_modes():
     api.app.dependency_overrides[api.get_pipeline_fn_for_mode] = lambda: fake_factory
     try:
         resp = TestClient(api.app).post(
-            "/compare", json={"query": "q", "modes": ["baseline", "contextual"]}
+            "/compare", json={"query": "q", "modes": ["graphrag", "combined"]}
         )
     finally:
         api.app.dependency_overrides.clear()
 
     assert resp.status_code == 200
     body = resp.json()
-    assert {r["mode"] for r in body["results"]} == {"baseline", "contextual"}
+    assert {r["mode"] for r in body["results"]} == {"graphrag", "combined"}
     assert all("answer" in r for r in body["results"])
 
 
@@ -203,7 +203,7 @@ def test_run_stream_emits_progress_and_result():
 
     api.app.dependency_overrides[api.get_pipeline_fn_for_mode] = _make_factory(fake_pipeline)
     try:
-        res = TestClient(api.app).post("/run/stream", json={"query": "what is RRF?", "mode": "contextual"})
+        res = TestClient(api.app).post("/run/stream", json={"query": "what is RRF?", "mode": "graphrag"})
     finally:
         api.app.dependency_overrides.clear()
 
@@ -241,7 +241,7 @@ def test_run_stream_emits_valid_json_when_faithfulness_is_nan():
 
     api.app.dependency_overrides[api.get_pipeline_fn_for_mode] = _make_factory(fake_pipeline)
     try:
-        res = TestClient(api.app).post("/run/stream", json={"query": "x", "mode": "contextual"})
+        res = TestClient(api.app).post("/run/stream", json={"query": "x", "mode": "graphrag"})
     finally:
         api.app.dependency_overrides.clear()
 
@@ -262,7 +262,7 @@ def test_run_stream_emits_error_frame_on_failure():
 
     api.app.dependency_overrides[api.get_pipeline_fn_for_mode] = _make_factory(boom_pipeline)
     try:
-        res = TestClient(api.app).post("/run/stream", json={"query": "x", "mode": "contextual"})
+        res = TestClient(api.app).post("/run/stream", json={"query": "x", "mode": "graphrag"})
     finally:
         api.app.dependency_overrides.clear()
 
@@ -274,7 +274,7 @@ def test_run_stream_emits_error_frame_on_failure():
 # --- usage reporting (ADR-0020) ---
 
 
-def _post_run(state: PipelineState, mode: str = "contextual") -> dict:
+def _post_run(state: PipelineState, mode: str = "graphrag") -> dict:
     async def fake_pipeline(query: str) -> PipelineState:
         return state
 
@@ -407,8 +407,10 @@ def test_run_usage_has_no_money_fields():
         }
 
 
-@pytest.mark.parametrize("mode", [m.value for m in api.RetrievalMode])
-def test_run_reports_usage_for_every_mode(mode):
+@pytest.mark.parametrize(
+    "mode", [m.value for m in api.RetrievalMode if api.unavailable_reason(m) is None]
+)
+def test_run_reports_usage_for_every_available_mode(mode):
     state = _fake_state(mode)
     state.usage = _attempt_usage(900, 150)
     body = _post_run(state, mode=mode)
@@ -424,7 +426,7 @@ def test_run_stream_result_carries_usage():
 
     api.app.dependency_overrides[api.get_pipeline_fn_for_mode] = _make_factory(fake_pipeline)
     try:
-        res = TestClient(api.app).post("/run/stream", json={"query": "q", "mode": "contextual"})
+        res = TestClient(api.app).post("/run/stream", json={"query": "q", "mode": "graphrag"})
     finally:
         api.app.dependency_overrides.clear()
 
@@ -445,7 +447,7 @@ def test_compare_reports_usage_per_mode():
     api.app.dependency_overrides[api.get_pipeline_fn_for_mode] = lambda: fake_factory
     try:
         resp = TestClient(api.app).post(
-            "/compare", json={"query": "q", "modes": ["baseline", "graphrag"]}
+            "/compare", json={"query": "q", "modes": ["combined", "graphrag"]}
         )
     finally:
         api.app.dependency_overrides.clear()
@@ -458,11 +460,11 @@ def test_compare_reports_usage_per_mode():
 
 def test_run_payload_marks_evaluated_mode_not_experimental():
     async def fake_pipeline(q: str) -> PipelineState:
-        return _fake_state("contextual")
+        return _fake_state("graphrag")
 
     api.app.dependency_overrides[api.get_pipeline_fn_for_mode] = _make_factory(fake_pipeline)
     try:
-        resp = TestClient(api.app).post("/run", json={"query": "q", "mode": "contextual"})
+        resp = TestClient(api.app).post("/run", json={"query": "q", "mode": "graphrag"})
     finally:
         api.app.dependency_overrides.clear()
 
@@ -502,12 +504,41 @@ def test_modes_lists_all_modes_with_experimental_flags(client):
     }
 
 
-def test_modes_says_every_mode_can_run(client):
+def test_modes_says_which_modes_can_run(client):
     # personal-website's RagModesContract rejects an item missing any of these
     # keys, even when reason is null (issue #35).
     res = client.get("/modes")
     assert res.status_code == 200
-    for item in res.json()["modes"]:
+    items = {item["mode"]: item for item in res.json()["modes"]}
+    for item in items.values():
         assert set(item) >= {"mode", "experimental", "available", "reason"}
-        assert item["available"] is True
-        assert item["reason"] is None
+    # The rerank modes wait on the Spark's reranker (issue #37); the rest run.
+    offline = {m for m, item in items.items() if not item["available"]}
+    assert offline == {"contextual", "baseline", "raptor_sac"}
+    assert {items[m]["reason"] for m in offline} == {"reranker-offline"}
+    assert all(items[m]["reason"] is None for m in items.keys() - offline)
+
+
+@pytest.mark.parametrize(
+    "path,body",
+    [
+        ("/run", {"query": "q", "mode": "contextual"}),
+        ("/run/stream", {"query": "q", "mode": "baseline"}),
+        ("/compare", {"query": "q", "modes": ["graphrag", "raptor_sac"]}),
+    ],
+)
+def test_offline_mode_is_refused_before_anything_is_built(path, body):
+    built = []
+
+    async def factory(mode: str):
+        built.append(mode)
+
+    api.app.dependency_overrides[api.get_pipeline_fn_for_mode] = lambda: factory
+    try:
+        res = TestClient(api.app).post(path, json=body)
+    finally:
+        api.app.dependency_overrides.clear()
+
+    assert res.status_code == 503
+    assert res.json()["detail"]["reason"] == "reranker-offline"
+    assert built == []

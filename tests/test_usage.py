@@ -12,7 +12,6 @@ from ragpipe.generate import Generator
 from ragpipe.guardrail import FaithfulnessScorer
 from ragpipe.models import Chunk
 from ragpipe.retrieval.passthrough import PassthroughReranker
-from ragpipe.retrieval.rerank import SemanticReranker
 from ragpipe.retrieval.substrate import RetrievalResult
 from ragpipe.usage import UsageEntry, collect_usage
 from ragpipe.workflow import run_pipeline
@@ -231,12 +230,12 @@ class _S:
     candidate_pool = 15
 
 
-class _SearchClient:
-    def search(self, search_text=None, **kwargs):
-        return iter(
-            {"id": c, "title": c, "url": c, "content": c, "@search.rerankerScore": 2.0}
-            for c in ("a", "b")
-        )
+class _MeteredReranker:
+    """A reranker billed per request, the way Azure's semantic ranker was."""
+
+    def rerank(self, query, fused, top_k=None):
+        usage.record_requests("rerank", "per-request-reranker")
+        return fused[: top_k or 2]
 
 
 class _Agent:
@@ -297,7 +296,7 @@ def _gen_usage(n_in=900, n_out=150):
 
 async def test_normal_run_reports_every_call_in_order():
     deps = _deps(
-        reranker=SemanticReranker(_SearchClient(), "default-semantic", 2),
+        reranker=_MeteredReranker(),
         agent=_Agent([_gen_usage()]),
         scores=[0.9],
         embed=_embed(),
@@ -306,7 +305,7 @@ async def test_normal_run_reports_every_call_in_order():
 
     assert [(e.stage, e.deployment) for e in state.usage] == [
         ("query_embedding", "text-embedding-3-small"),
-        ("rerank", "azure-ai-search-semantic-ranker"),
+        ("rerank", "per-request-reranker"),
         ("generation", "gpt-5.4"),
         ("faithfulness_judge", "claude-sonnet-4-6"),
         ("faithfulness_judge", "claude-sonnet-4-6"),
@@ -319,7 +318,7 @@ async def test_normal_run_reports_every_call_in_order():
 
 async def test_guardrail_retry_gets_its_own_entries():
     deps = _deps(
-        reranker=SemanticReranker(_SearchClient(), "default-semantic", 2),
+        reranker=_MeteredReranker(),
         agent=_Agent([_gen_usage(900, 150), _gen_usage(1400, 180)]),
         scores=[0.3, 0.9],
     )
@@ -351,10 +350,9 @@ async def test_run_without_paid_calls_reports_empty_list():
     assert state.usage == []
 
 
-async def test_passthrough_rerank_and_empty_candidates_are_not_billed():
+async def test_passthrough_rerank_is_not_billed():
     with collect_usage([]) as entries:
         PassthroughReranker(2).rerank("q", [_chunk("a")])
-        SemanticReranker(_SearchClient(), "default-semantic", 2).rerank("q", [])
     assert entries == []
 
 

@@ -8,98 +8,77 @@ from ragpipe.retrieval.rrf import reciprocal_rank_fusion
 from ragpipe.retrieval.substrate import RetrievalResult
 
 
-class _EntitySearch:  # pragma: no cover
-    """Hybrid (BM25 + vector) search over the entities index."""
+def _hybrid(table, embed_fn, query: str, k: int, to_chunk: Callable[[dict], Chunk]) -> list[Chunk]:
+    """BM25 + vector over one table, RRF-fused: what Azure did for a query that
+    carried both search_text and a vector query."""
+    dense = [to_chunk(r) for r in table.nearest(embed_fn(query), k)]
+    lexical = [to_chunk(r) for r in table.bm25(query, k)]
+    return reciprocal_rank_fusion(dense, lexical)[:k]
 
-    def __init__(self, client, embed_fn: Callable[[str], list[float]], k: int) -> None:
-        self._client = client
+
+def _entity_chunk(hit: dict) -> Chunk:
+    return Chunk(
+        id=hit["id"],
+        title=hit["name"],
+        url=(hit.get("source_urls") or [""])[0],
+        content=f'{hit["name"]} ({hit.get("type", "")}): {hit.get("description", "")}',
+        score=float(hit.get("score", 0.0)),
+    )
+
+
+def _community_chunk(hit: dict) -> Chunk:
+    return Chunk(
+        id=hit["id"],
+        title=hit.get("title", ""),
+        url=(hit.get("source_urls") or [""])[0],
+        content=hit.get("summary", ""),
+        score=float(hit.get("score", 0.0)),
+    )
+
+
+class _EntitySearch:
+    """Hybrid (BM25 + vector) search over the entities table."""
+
+    def __init__(self, table, embed_fn: Callable[[str], list[float]], k: int) -> None:
+        self._table = table
         self._embed = embed_fn
         self._k = k
 
     def search_entities(self, query: str, k: int) -> list[Chunk]:
-        from azure.search.documents.models import VectorizedQuery
-
-        vector = self._embed(query)
-        vq = VectorizedQuery(vector=vector, k=k, fields="description_vector")
-        results = self._client.search(
-            search_text=query,
-            vector_queries=[vq],
-            top=k,
-            select=["id", "name", "type", "description", "source_urls"],
-        )
-        chunks = []
-        for hit in results:
-            chunks.append(
-                Chunk(
-                    id=hit["id"],
-                    title=hit["name"],
-                    url=(hit.get("source_urls") or [""])[0],
-                    content=f'{hit["name"]} ({hit.get("type", "")}): {hit.get("description", "")}',
-                    score=float(hit.get("@search.score", 0.0)),
-                )
-            )
-        return chunks
+        return _hybrid(self._table, self._embed, query, k, _entity_chunk)
 
 
-class _CommunitySearch:  # pragma: no cover
-    """Hybrid (BM25 + vector) search over the communities index."""
+class _CommunitySearch:
+    """Hybrid (BM25 + vector) search over the communities table."""
 
-    def __init__(self, client, embed_fn: Callable[[str], list[float]], k: int) -> None:
-        self._client = client
+    def __init__(self, table, embed_fn: Callable[[str], list[float]], k: int) -> None:
+        self._table = table
         self._embed = embed_fn
         self._k = k
 
     def search_communities(self, query: str, k: int) -> list[Chunk]:
-        from azure.search.documents.models import VectorizedQuery
-
-        vector = self._embed(query)
-        vq = VectorizedQuery(vector=vector, k=k, fields="summary_vector")
-        results = self._client.search(
-            search_text=query,
-            vector_queries=[vq],
-            top=k,
-            select=["id", "title", "summary", "source_urls"],
-        )
-        chunks = []
-        for hit in results:
-            chunks.append(
-                Chunk(
-                    id=hit["id"],
-                    title=hit.get("title", ""),
-                    url=(hit.get("source_urls") or [""])[0],
-                    content=hit.get("summary", ""),
-                    score=float(hit.get("@search.score", 0.0)),
-                )
-            )
-        return chunks
+        return _hybrid(self._table, self._embed, query, k, _community_chunk)
 
 
-def build_entity_search(client, embed_fn: Callable[[str], list[float]], k: int) -> _EntitySearch:  # pragma: no cover
-    """Build a live entity-search helper backed by an Azure Search client."""
-    return _EntitySearch(client, embed_fn, k)
+def build_entity_search(table, embed_fn: Callable[[str], list[float]], k: int) -> _EntitySearch:
+    """Build a live entity-search helper backed by the entities table."""
+    return _EntitySearch(table, embed_fn, k)
 
 
-def build_community_search(client, embed_fn: Callable[[str], list[float]], k: int) -> _CommunitySearch:  # pragma: no cover
-    """Build a live community-search helper backed by an Azure Search client."""
-    return _CommunitySearch(client, embed_fn, k)
+def build_community_search(table, embed_fn: Callable[[str], list[float]], k: int) -> _CommunitySearch:
+    """Build a live community-search helper backed by the communities table."""
+    return _CommunitySearch(table, embed_fn, k)
 
 
-def build_adjacency(client) -> dict[str, list[Chunk]]:  # pragma: no cover
-    """Read ALL relationship docs and build a name -> [Chunk] adjacency map.
+def build_adjacency(table) -> dict[str, list[Chunk]]:
+    """Read ALL relationship rows and build a name -> [Chunk] adjacency map.
 
     Keys are upper-cased entity names (matching entity .title). Each relationship
-    doc is registered under both its source and target so a seed entity can find
+    row is registered under both its source and target so a seed entity can find
     all edges incident to it.
     """
     adjacency: dict[str, list[Chunk]] = {}
-    # No `top=`: Azure Search caps a single page and would silently drop edges past
-    # it. The SearchItemPaged iterator pages through the full result set, so the
-    # whole relationships index is loaded into the adjacency map.
-    results = client.search(
-        search_text="*",
-        select=["id", "source", "target", "description", "weight", "source_urls"],
-    )
-    for hit in results:
+    for hit in table.scan():
         rel_chunk = Chunk(
             id=hit["id"],
             title=f'{hit["source"]} — {hit["target"]}',
@@ -119,7 +98,7 @@ class GraphRAGSubstrate:
     report ranking) search. entity_search/community_search expose
     search_entities(query,k)/search_communities(query,k) -> list[Chunk]. adjacency
     maps an entity title -> its relationship Chunks (built once from the
-    relationships index at wiring time).
+    relationships table at wiring time).
 
     The global leg is *routed*, not always fused (issue #8, ADR-0018): a
     deterministic query classifier engages community summaries only for

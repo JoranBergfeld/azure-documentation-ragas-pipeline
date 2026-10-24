@@ -13,13 +13,16 @@ def test_stage_chunk_tables_uses_dynamic_stages():
     assert "reranked" in tables
 
 
-def test_mode_options_lists_all_registered_modes_in_registry_order():
+def test_mode_options_lists_runnable_modes_in_registry_order():
     from app.dashboard import mode_options
+    from ragpipe.config import unavailable_reason
     from ragpipe.retrieval.registry import registered_modes
 
-    assert mode_options() == [m.value for m in registered_modes()]
-    assert len(mode_options()) == 9
-    assert mode_options()[0] == "contextual"
+    assert mode_options() == [
+        m.value for m in registered_modes() if unavailable_reason(m) is None
+    ]
+    assert len(mode_options()) == 6
+    assert "contextual" not in mode_options()
 
 
 def test_main_prewarms_ragas_imports_at_load_time():
