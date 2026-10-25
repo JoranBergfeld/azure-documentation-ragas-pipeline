@@ -125,7 +125,7 @@ nothing to the run's usage (ADR-0020), same as the passthrough reranker.
 
 **Their re-evaluated numbers won't compare like for like** with the Azure-era files:
 different reranker, different first-stage BM25. The `docs/eval-history.md` entry for that run
-has to say so.
+has to say so. It does (2026-10-25). With `baseline` back, `paired_vs_baseline` fills in again.
 
 ### Rejected (amendment)
 
