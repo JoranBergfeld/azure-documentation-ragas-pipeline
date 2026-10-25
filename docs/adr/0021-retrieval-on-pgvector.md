@@ -1,6 +1,6 @@
 # 0021 — Retrieval on pgvector in homelab's Postgres
 
-**Status:** Accepted (2026-10-24)
+**Status:** Accepted (2026-10-24), amended 2026-10-25 for the reranker (#40)
 
 ## Context
 
@@ -16,7 +16,8 @@ Three things Azure did for us need a replacement:
    use any global information". The `pg_search`/BM25 extensions want Postgres 17, and the
    shared instance is 16.
 3. **The semantic ranker** on `contextual`, `baseline` and `raptor_sac`. It goes with the
-   service. Its replacement, `bge-reranker-v2-m3` on vLLM on the DGX Spark, isn't up yet.
+   service. Its replacement, a cross-encoder on vLLM on the DGX Spark, wasn't up yet when
+   this was written. See the amendment below for what's serving.
 
 ## Decision
 
@@ -90,6 +91,51 @@ converges on the export, never doubles rows, and a crash halfway resumes without
   write Postgres, a fresh corpus means ingest → export → import. That's a follow-up, and it
   matters once the search service is deleted.
 
+## Amendment (2026-10-25): the Spark reranker (#40)
+
+The reranker is up, and it isn't the `bge-reranker-v2-m3` named above. Homelab serves
+`nvidia/llama-nemotron-rerank-1b-v2` (1B cross-encoder, 8192-token context, commercial-OK
+licence) on NVIDIA's `nvcr.io/nvidia/vllm:26.02-py3` image (vLLM 0.15.1). The reason is
+homelab's NVIDIA-first rule for NVIDIA hardware, not a bake-off. Nobody benchmarked the two
+on this corpus. The re-eval of the three modes is the first real check.
+
+**The three modes come back on it.** `retrieval/cross_encoder.py` posts to `/v1/rerank`
+with the fused candidates and keeps vLLM's order and `relevance_score`. Not bare `/rerank`:
+vLLM answers there too but skips the API key, and only the firewall keeps it shut. Document text
+copies the old semantic configs so the swap is like for like: title + `content` + `context`
+for `ms_docs` and `raptor_sac`, title + `content` for `baseline`. The `question:` /
+`passage:` template is applied server side, so we send plain text. `Chunk` grew a `context`
+field for this. It's retrieval-only, the generator still never sees it (ADR-0003).
+
+**Available means reachable.** `unavailable_reason()` no longer hard-codes
+`reranker-offline`. The rerank modes are available when `RERANKER_URL` is set and `/health`
+answers 200. The probe has a 2 s timeout and its answer is cached for 60 s, so `/modes` stays
+cheap and greys the modes out within a minute of the Spark going down.
+
+**A mid-query failure is `ModeUnavailable`, not passthrough.** Calls get a 15 s timeout and
+two retries with backoff on timeouts, connection errors, 429 and 5xx. Anything else, or
+running out of retries, raises `ModeUnavailable("reranker-offline")`: `/run` and `/compare`
+answer the same 503 as the up-front check, `/run/stream` sends an error frame with the
+reason, and the eval drops the mode instead of writing a half-scored file. The failure also
+marks the reranker down in the health cache. Falling back to score-sorting would quietly run
+a different pipeline under the same name, the argument this ADR already made.
+
+**No usage entry.** The Spark is homelab hardware and nobody bills it, so a rerank call adds
+nothing to the run's usage (ADR-0020), same as the passthrough reranker.
+
+**Their re-evaluated numbers won't compare like for like** with the Azure-era files:
+different reranker, different first-stage BM25. The `docs/eval-history.md` entry for that run
+has to say so.
+
+### Rejected (amendment)
+
+- **`bge-reranker-v2-m3`**, as planned. Fine model, just not what homelab serves on NVIDIA
+  hardware.
+- **Probing `/health` on every `/modes` call.** One more network hop per page load for a
+  status that changes on the scale of minutes.
+- **Retrying forever / long timeouts.** A request stuck on a dead Spark holds a worker and
+  the user's spinner. Fail fast and say why.
+
 ## Sources
 
 - personal-website ADR 0002, *Retrieval on Postgres, not Azure Search*:
@@ -106,3 +152,9 @@ converges on the export, never doubles rows, and a crash halfway resumes without
   https://learn.microsoft.com/en-us/azure/search/index-ranking-similarity
 - Azure AI Search, *Hybrid search scoring (RRF)*:
   https://learn.microsoft.com/en-us/azure/search/hybrid-search-ranking
+- NVIDIA, `llama-nemotron-rerank-1b-v2` model card (vLLM serving, question/passage template):
+  https://huggingface.co/nvidia/llama-nemotron-rerank-1b-v2
+- vLLM docs, Cohere-compatible rerank API (`/rerank`, `/v1/rerank`):
+  https://docs.vllm.ai/en/stable/models/pooling_models/scoring/#cohere-rerank-api
+- Azure AI Search, *Configure semantic ranker* (title, content and keyword fields, in
+  priority order): https://learn.microsoft.com/en-us/azure/search/semantic-how-to-configure

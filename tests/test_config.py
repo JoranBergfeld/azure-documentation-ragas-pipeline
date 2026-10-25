@@ -141,10 +141,30 @@ def test_database_url_is_optional_for_callers_that_never_retrieve(monkeypatch):
     assert Settings.from_env(load=False).rag_database_url is None
 
 
-def test_rerank_modes_are_unavailable_until_a_reranker_serves():
+def test_rerank_modes_are_unavailable_without_a_reranker():
     from ragpipe.config import RetrievalMode, unavailable_reason
 
     assert unavailable_reason("contextual") == "reranker-offline"
     assert unavailable_reason(RetrievalMode.RAPTOR_SAC) == "reranker-offline"
     assert unavailable_reason("baseline_agentic") is None
     assert unavailable_reason(RetrievalMode.GRAPHRAG) is None
+
+
+def test_rerank_modes_come_back_when_the_reranker_answers(monkeypatch):
+    from ragpipe.config import RetrievalMode, unavailable_reason
+    from ragpipe.retrieval import cross_encoder
+
+    monkeypatch.setenv("RERANKER_URL", "http://spark:8100")
+    monkeypatch.setattr(cross_encoder, "_probe", lambda *a: True)
+    assert unavailable_reason("contextual") is None
+    assert unavailable_reason(RetrievalMode.BASELINE) is None
+    assert unavailable_reason(RetrievalMode.RAPTOR_SAC) is None
+
+
+def test_rerank_modes_stay_offline_when_the_probe_fails(monkeypatch):
+    from ragpipe.config import unavailable_reason
+    from ragpipe.retrieval import cross_encoder
+
+    monkeypatch.setenv("RERANKER_URL", "http://spark:8100")
+    monkeypatch.setattr(cross_encoder, "_probe", lambda *a: False)
+    assert unavailable_reason("baseline") == "reranker-offline"

@@ -5,8 +5,8 @@ import math
 from pathlib import Path
 from typing import Any, Awaitable, Callable
 
-from fastapi import Depends, FastAPI, HTTPException
-from fastapi.responses import StreamingResponse
+from fastapi import Depends, FastAPI, HTTPException, Request
+from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel
 
 from app.dashboard import (
@@ -15,12 +15,25 @@ from app.dashboard import (
     per_stage_chart_data,
     stage_chunk_tables,
 )
-from ragpipe.config import RetrievalMode, Settings, is_experimental_mode, unavailable_reason
+from ragpipe.config import (
+    ModeUnavailable,
+    RetrievalMode,
+    Settings,
+    is_experimental_mode,
+    unavailable_reason,
+)
 from ragpipe.retrieval.registry import registered_modes
 from ragpipe.models import PipelineState
 from ragpipe.streaming import pipeline_event_stream
 
 app = FastAPI(title="ragpipe API")
+
+
+@app.exception_handler(ModeUnavailable)
+async def _mode_unavailable(request: Request, exc: ModeUnavailable) -> JSONResponse:
+    """A mode that went away after the up-front check (the reranker dropping
+    mid-query, issue #40) gets the same 503 body ``_require_available`` sends."""
+    return JSONResponse(status_code=503, content={"detail": {"mode": exc.mode, "reason": exc.reason}})
 
 # Per-mode cache — building the clients is expensive so we reuse per mode.
 _pipeline_fns: dict[str, Callable[..., Awaitable[PipelineState]]] = {}
@@ -101,7 +114,7 @@ def modes() -> dict[str, Any]:
     """Discoverable contract for the runnable retrieval modes. ``experimental`` flags
     the ``*_agentic`` wrappers, which are exposed without eval coverage (issue #11).
     ``available``/``reason`` say whether a mode can run right now (issue #35): the
-    rerank modes are ``reranker-offline`` until the Spark serves the reranker (#37)."""
+    rerank modes are ``reranker-offline`` while the Spark's reranker isn't answering (#40)."""
     items = [
         {
             "mode": m.value,
@@ -146,6 +159,11 @@ async def run_stream(
                 yield _sse("progress", payload.to_dict())
             elif kind == "result":
                 yield _sse("result", _state_payload(req.mode, payload))
+            elif isinstance(payload, ModeUnavailable):
+                yield _sse(
+                    "error",
+                    {"error": type(payload).__name__, "mode": payload.mode, "reason": payload.reason},
+                )
             else:  # "error"
                 yield _sse("error", {"error": type(payload).__name__})
 

@@ -8,7 +8,13 @@ import math
 import os
 
 from ragpipe.app_wiring import build_pipeline_fn
-from ragpipe.config import RetrievalMode, Settings, TestsetMode, unavailable_reason
+from ragpipe.config import (
+    ModeUnavailable,
+    RetrievalMode,
+    Settings,
+    TestsetMode,
+    unavailable_reason,
+)
 from ragpipe.eval.harness import (
     aggregate,
     aggregate_by_tag,
@@ -71,12 +77,17 @@ def main() -> None:  # pragma: no cover
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--modes",
-        default=",".join(m.value for m in RetrievalMode if unavailable_reason(m) is None),
+        default=None,
+        help="comma-separated modes; default: every mode that can run right now",
     )
     args = parser.parse_args()
-    modes = [RetrievalMode(m.strip()) for m in args.modes.split(",") if m.strip()]
 
+    # Settings first: it loads .env, and the default mode list probes RERANKER_URL.
     settings = Settings.from_env()
+    if args.modes is None:
+        modes = [m for m in RetrievalMode if unavailable_reason(m) is None]
+    else:
+        modes = [RetrievalMode(m.strip()) for m in args.modes.split(",") if m.strip()]
     items = _load_items(settings)
     evaluator_fn = build_ragas_evaluator(settings)
 
@@ -95,7 +106,7 @@ def main() -> None:  # pragma: no cover
             print(f"=== mode: {mode_value} === (cached: {filename})", flush=True)
             continue
         # A mode that can't run (the rerank modes while the reranker is offline,
-        # issue #37) is skipped, not fatal: the boot-time harness lists modes
+        # issue #40) is skipped, not fatal: the boot-time harness lists modes
         # from homelab and shouldn't lose every other mode's snapshot over one.
         reason = unavailable_reason(mode)
         if reason is not None:
@@ -104,7 +115,12 @@ def main() -> None:  # pragma: no cover
 
         print(f"=== mode: {mode_value} ===", flush=True)
         pipeline_fn = build_pipeline_fn(settings, mode=mode)
-        records = asyncio.run(run_harness(items, pipeline_fn, evaluator_fn))
+        try:
+            records = asyncio.run(run_harness(items, pipeline_fn, evaluator_fn))
+        except ModeUnavailable as exc:
+            # The reranker dropped partway: no half-scored file, the next run redoes it.
+            print(f"=== mode: {mode_value} === (aborted: {exc.reason})", flush=True)
+            continue
         if settings.per_stage_metrics:
             records = asyncio.run(build_per_stage_context_evaluator(settings)(records))
         mode_result = _clean({

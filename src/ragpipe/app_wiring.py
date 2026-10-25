@@ -2,7 +2,14 @@ from __future__ import annotations
 
 from typing import Awaitable, Callable
 
-from ragpipe.config import ModeUnavailable, RetrievalMode, Settings, unavailable_reason
+from ragpipe.config import (
+    RERANK_MODES,
+    RERANKER_OFFLINE,
+    ModeUnavailable,
+    RetrievalMode,
+    Settings,
+    unavailable_reason,
+)
 from ragpipe.models import PipelineState
 from ragpipe.workflow import PipelineDeps, run_pipeline
 
@@ -14,6 +21,36 @@ def _score_callable(scorer):
     if detailed is not None:
         return lambda q, a, c: detailed(q, a, c)
     return lambda q, a, c: scorer.score(q, a, c)
+
+
+# Which of the old semantic configs' content fields each rerank mode reads (issue
+# #40): ms_docs and raptor_sac had title + content + context, baseline had title +
+# content. Keeps the cross-encoder swap like for like.
+_RERANK_WITH_CONTEXT: dict[RetrievalMode, bool] = {
+    RetrievalMode.CONTEXTUAL: True,
+    RetrievalMode.BASELINE: False,
+    RetrievalMode.RAPTOR_SAC: True,
+}
+
+
+def build_reranker(settings: Settings, mode: RetrievalMode):
+    """The cross-encoder for the rerank modes, passthrough for the rest."""
+    from ragpipe.retrieval.passthrough import PassthroughReranker
+
+    if mode not in RERANK_MODES:
+        # graphrag and combined fuse heterogeneous tables no single cross-encoder
+        # pass over one table spans; the agentic wrappers keep the ranking they
+        # were evaluated with.
+        return PassthroughReranker(settings.top_k)
+
+    from ragpipe.retrieval.cross_encoder import CrossEncoderReranker, RerankerConfig
+
+    config = RerankerConfig.from_env()
+    if config is None:
+        raise ModeUnavailable(mode, RERANKER_OFFLINE)
+    return CrossEncoderReranker(
+        config, mode, top_k=settings.top_k, with_context=_RERANK_WITH_CONTEXT[mode]
+    )
 
 
 def make_deps(settings, retrieve, reranker, generator, scorer) -> PipelineDeps:
@@ -55,7 +92,6 @@ def build_pipeline_fn(
     from ragpipe.generate import Generator
     from ragpipe.guardrail import FaithfulnessScorer, build_ragas_faithfulness
     from ragpipe.pgstore import PgTable
-    from ragpipe.retrieval.passthrough import PassthroughReranker
     from ragpipe.retrieval.registry import build_substrate
 
     mode = RetrievalMode(mode)
@@ -116,11 +152,7 @@ def build_pipeline_fn(
     ctx = _Ctx()
     substrate = build_substrate(mode, settings, ctx)
 
-    # Every mode that can run today ranks by its own candidate score: graphrag and
-    # combined fuse heterogeneous tables no single cross-encoder pass spans, and
-    # the agentic wrappers wrap those. The modes that need a real reranker are
-    # refused above until one serves (RERANK_MODES).
-    reranker = PassthroughReranker(settings.top_k)
+    reranker = build_reranker(settings, mode)
 
     agent = FoundryAgent(
         project_endpoint=settings.foundry_project_endpoint,

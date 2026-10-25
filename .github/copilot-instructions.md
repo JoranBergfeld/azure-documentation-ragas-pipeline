@@ -1,7 +1,9 @@
 # Copilot instructions for `ragpipe`
 
-Observable hybrid-retrieval RAG over Microsoft/Azure docs, built on Microsoft Agent
-Framework + Azure AI Foundry + Azure AI Search, evaluated with RAGAS. The `ragpipe`
+Observable hybrid-retrieval RAG over Microsoft/Azure docs, evaluated with RAGAS.
+Generation, embeddings and judges run on Microsoft Agent Framework + Azure AI Foundry;
+retrieval is pgvector in homelab's Postgres (ADR-0021) and the rerank modes call a
+cross-encoder on vLLM on the DGX Spark (`retrieval/cross_encoder.py`, issue #40). The `ragpipe`
 package (`src/ragpipe/`) holds the pipeline; `app/` is the Streamlit UI + FastAPI
 service. Read `README.md` for setup/run/eval commands and `docs/adr/` for the *why*
 behind every significant design decision.
@@ -25,9 +27,11 @@ Three phases (see the diagram in `README.md` / `docs/pipeline*.svg`):
 
 1. **Ingest** (`ragpipe.ingest`): crawl Microsoft Learn → extract markdown → heading-aware
    chunk → decorate each chunk with a breadcrumb + cached LLM "situating context" → embed →
-   upload to Azure AI Search.
+   upload to Azure AI Search, then export → `ragpipe.pg_import` into Postgres (retrieval
+   reads Postgres only).
 2. **Query pipeline**: `app_wiring.build_pipeline_fn(settings, *, mode)` assembles a
-   substrate + reranker + Foundry generator agent + RAGAS faithfulness judge into
+   substrate + reranker (`build_reranker`: the Spark cross-encoder for `RERANK_MODES`,
+   score-sort passthrough otherwise) + Foundry generator agent + RAGAS faithfulness judge into
    `PipelineDeps`, then `workflow.run_pipeline` executes: retrieve **once** → loop
    {rerank (window widens each retry) → generate → faithfulness score → `decide_next`}.
    On `PASS` it returns; on `EXHAUSTED` it sets `abstained` and replaces the answer with

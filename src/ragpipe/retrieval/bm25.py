@@ -13,6 +13,7 @@ def _to_chunk(row: dict[str, Any]) -> Chunk:
         url=row.get("url", ""),
         content=row.get("content", ""),
         score=float(row.get("score", 0.0)),
+        context=row.get("context") or "",
     )
 
 

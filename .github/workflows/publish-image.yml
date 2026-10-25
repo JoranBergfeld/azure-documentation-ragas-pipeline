@@ -2,7 +2,8 @@ name: publish-image
 
 # Build the container image and push it to GHCR on every push to main, so the
 # homelab personal-website stack can pull
-# ghcr.io/joranbergfeld/azure-documentation-ragas-pipeline:latest.
+# ghcr.io/joranbergfeld/ragas-infused-pipeline:latest. (Until 2026-10-25 the repo,
+# and so the image, was azure-documentation-ragas-pipeline; that package is frozen.)
 #
 # Mirrors the publish job in JoranBergfeld/personal-website (.github/workflows/ci.yml).
 on:
@@ -39,14 +40,14 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          # github.repository is "JoranBergfeld/azure-documentation-ragas-pipeline";
+          # github.repository is "JoranBergfeld/ragas-infused-pipeline";
           # metadata-action lowercases it to the GHCR-legal image name.
           images: ghcr.io/${{ github.repository }}
           tags: |
             type=raw,value=latest,enable={{is_default_branch}}
             type=sha,prefix=,format=short
           labels: |
-            org.opencontainers.image.title=azure-documentation-ragas-pipeline
+            org.opencontainers.image.title=ragas-infused-pipeline
             org.opencontainers.image.source=https://github.com/${{ github.repository }}
             org.opencontainers.image.description=RAGAS-evaluated RAG pipeline HTTP API
 

@@ -542,3 +542,59 @@ def test_offline_mode_is_refused_before_anything_is_built(path, body):
     assert res.status_code == 503
     assert res.json()["detail"]["reason"] == "reranker-offline"
     assert built == []
+
+
+def _reranker_up(monkeypatch):
+    from ragpipe.retrieval import cross_encoder
+
+    monkeypatch.setenv("RERANKER_URL", "http://spark:8100")
+    monkeypatch.setattr(cross_encoder, "_probe", lambda *a: True)
+
+
+def test_modes_brings_the_rerank_modes_back_when_the_reranker_answers(client, monkeypatch):
+    _reranker_up(monkeypatch)
+    items = {item["mode"]: item for item in client.get("/modes").json()["modes"]}
+    assert all(item["available"] and item["reason"] is None for item in items.values())
+
+
+def _offline_mid_query(mode):
+    async def pipeline(query, *, on_event=None):
+        raise api.ModeUnavailable(mode, "reranker-offline")
+
+    return pipeline
+
+
+@pytest.mark.parametrize(
+    "path,body",
+    [
+        ("/run", {"query": "q", "mode": "contextual"}),
+        ("/compare", {"query": "q", "modes": ["graphrag", "contextual"]}),
+    ],
+)
+def test_reranker_dropping_mid_query_is_a_503(monkeypatch, path, body):
+    _reranker_up(monkeypatch)
+    api.app.dependency_overrides[api.get_pipeline_fn_for_mode] = _make_factory(
+        _offline_mid_query("contextual")
+    )
+    try:
+        res = TestClient(api.app).post(path, json=body)
+    finally:
+        api.app.dependency_overrides.clear()
+
+    assert res.status_code == 503
+    assert res.json()["detail"] == {"mode": "contextual", "reason": "reranker-offline"}
+
+
+def test_reranker_dropping_mid_stream_says_why(monkeypatch):
+    _reranker_up(monkeypatch)
+    api.app.dependency_overrides[api.get_pipeline_fn_for_mode] = _make_factory(
+        _offline_mid_query("baseline")
+    )
+    try:
+        res = TestClient(api.app).post("/run/stream", json={"query": "q", "mode": "baseline"})
+    finally:
+        api.app.dependency_overrides.clear()
+
+    frames = [json.loads(line[len("data: "):]) for line in res.text.splitlines()
+              if line.startswith("data: ")]
+    assert frames[-1] == {"error": "ModeUnavailable", "mode": "baseline", "reason": "reranker-offline"}

@@ -22,7 +22,7 @@ ARCHITECTURE_DIAGRAMS = (
 
 def mode_options() -> list[str]:
     """Runnable retrieval modes in registry order, for the Run-tab selector.
-    Modes that can't run right now (the rerank modes, issue #37) are left out."""
+    Modes that can't run right now (the rerank modes while the reranker is down) are left out."""
     return [m.value for m in registered_modes() if unavailable_reason(m) is None]
 
 
