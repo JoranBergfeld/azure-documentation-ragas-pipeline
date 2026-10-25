@@ -45,9 +45,9 @@ def is_experimental_mode(mode: "RetrievalMode | str") -> bool:
 
 
 # Modes whose last retrieval step is a cross-encoder rerank over one table. Azure's
-# semantic ranker went with the search service (issue #37, ADR-0021) and its
-# replacement, bge-reranker-v2-m3 on vLLM on the DGX Spark, isn't serving yet. Until
-# it is these can't run, and /modes says so. Running them without a reranker would
+# semantic ranker went with the search service (issue #37, ADR-0021); its
+# replacement is a cross-encoder on vLLM on the DGX Spark (issue #40). These run
+# only while it answers, and /modes says so. Running them without a reranker would
 # change what their eval numbers describe, so they're offline rather than degraded.
 RERANK_MODES: frozenset[RetrievalMode] = frozenset(
     {RetrievalMode.CONTEXTUAL, RetrievalMode.BASELINE, RetrievalMode.RAPTOR_SAC}
@@ -56,9 +56,13 @@ RERANKER_OFFLINE = "reranker-offline"
 
 
 def unavailable_reason(mode: "RetrievalMode | str") -> str | None:
-    """Why a mode can't run right now, or None when it can."""
+    """Why a mode can't run right now, or None when it can. The rerank modes need
+    ``RERANKER_URL`` set and its ``/health`` answering (probed, cached a minute)."""
     if RetrievalMode(mode) in RERANK_MODES:
-        return RERANKER_OFFLINE
+        from ragpipe.retrieval.cross_encoder import reranker_reachable
+
+        if not reranker_reachable():
+            return RERANKER_OFFLINE
     return None
 
 

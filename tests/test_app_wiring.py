@@ -109,3 +109,41 @@ def test_make_deps_prefers_the_per_claim_scorer_path():
 
     deps = make_deps(_S(), retrieve=None, reranker=None, generator=None, scorer=_Scorer())
     assert deps.score("q", "a", []) == "detailed"
+
+
+def test_build_reranker_is_passthrough_outside_the_rerank_modes():
+    from ragpipe.app_wiring import build_reranker
+    from ragpipe.config import RetrievalMode
+    from ragpipe.retrieval.passthrough import PassthroughReranker
+
+    for mode in (RetrievalMode.GRAPHRAG, RetrievalMode.COMBINED, RetrievalMode.BASELINE_AGENTIC):
+        assert isinstance(build_reranker(_settings(), mode), PassthroughReranker)
+
+
+def test_build_reranker_uses_the_cross_encoder_with_each_modes_fields(monkeypatch):
+    from ragpipe.app_wiring import build_reranker
+    from ragpipe.config import RetrievalMode
+    from ragpipe.retrieval.cross_encoder import CrossEncoderReranker
+
+    monkeypatch.setenv("RERANKER_URL", "http://spark:8100")
+    expected = {
+        RetrievalMode.CONTEXTUAL: True,
+        RetrievalMode.BASELINE: False,
+        RetrievalMode.RAPTOR_SAC: True,
+    }
+    for mode, with_context in expected.items():
+        reranker = build_reranker(_settings(), mode)
+        assert isinstance(reranker, CrossEncoderReranker)
+        assert reranker._with_context is with_context
+        assert reranker._mode is mode
+
+
+def test_build_reranker_refuses_a_rerank_mode_without_a_url():
+    import pytest
+
+    from ragpipe.app_wiring import build_reranker
+    from ragpipe.config import ModeUnavailable, RetrievalMode
+
+    with pytest.raises(ModeUnavailable) as err:
+        build_reranker(_settings(), RetrievalMode.BASELINE)
+    assert err.value.reason == "reranker-offline"

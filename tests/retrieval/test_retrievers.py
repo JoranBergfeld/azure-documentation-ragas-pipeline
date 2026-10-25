@@ -48,3 +48,11 @@ def test_dense_retriever_runs_a_vector_query():
 
     assert [c.id for c in chunks] == ["a"]
     assert table.calls == [("nearest", [0.1, 0.2, 0.3], 5)]
+
+
+def test_retrievers_carry_the_context_for_the_reranker():
+    row = {**_row("a", 1.0), "context": "situating text"}
+    chunk = BM25Retriever(FakeTable([row]), top_k=1).retrieve("q")[0]
+    assert chunk.context == "situating text"
+    # Tables without one (graph rows) leave it empty.
+    assert BM25Retriever(FakeTable([_row("b", 1.0)]), top_k=1).retrieve("q")[0].context == ""

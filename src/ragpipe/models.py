@@ -13,6 +13,10 @@ class Chunk:
     url: str
     content: str
     score: float = 0.0
+    # The chunk's situating context, where its table has one. Retrieval-only:
+    # the cross-encoder reads it (like the old semantic config did), the
+    # generator never sees it (ADR-0003).
+    context: str = ""
 
 
 @dataclass
