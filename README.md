@@ -1,8 +1,11 @@
 # RAGAS-infused RAG pipeline
 
-Observable hybrid-retrieval RAG over Microsoft/Azure docs, built on Microsoft
-Agent Framework + Azure AI Foundry, retrieving from pgvector on Postgres (it used to be
-Azure AI Search, ADR-0021), evaluated with RAGAS.
+Observable hybrid-retrieval RAG over Microsoft/Azure docs, evaluated with RAGAS.
+Generation, embeddings and the judges still run on Azure AI Foundry (Microsoft Agent
+Framework). Retrieval and rerank don't anymore: pgvector in homelab's Postgres
+(ADR-0021) and a cross-encoder on a DGX Spark (#40). So it's half Azure now, which is
+why the repo dropped its old `azure-documentation-ragas-pipeline` name for
+`ragas-infused-pipeline`.
 
 ![RAGAS-infused RAG pipeline — architecture](docs/pipeline.svg)
 
@@ -107,11 +110,31 @@ are removed, nothing doubles. `--replace` drops and reloads. It never writes int
 Ingest still writes Azure AI Search, so a fresh corpus currently means ingest, export, import.
 Rough, and on the list.
 
-**The rerank modes are offline.** `contextual`, `baseline` and `raptor_sac` end in a
-cross-encoder rerank. Azure's semantic ranker left with the search service and its replacement
-(`bge-reranker-v2-m3` on vLLM on the DGX Spark) isn't serving yet, so `/modes` reports them
-`available: false, reason: "reranker-offline"`, `/run` answers 503, and the eval skips them.
-Everything else runs.
+## Reranker (DGX Spark)
+
+`contextual`, `baseline` and `raptor_sac` end in a cross-encoder rerank. Azure's semantic
+ranker left with the search service, so homelab serves `nvidia/llama-nemotron-rerank-1b-v2`
+on vLLM on the DGX Spark instead (#40, ADR-0021). Three variables:
+
+```bash
+RERANKER_URL=http://192.168.5.6:8100     # base URL, no path
+RERANKER_API_KEY=<key>                   # sent as Authorization: Bearer
+RERANKER_MODEL=nvidia/llama-nemotron-rerank-1b-v2   # the default
+```
+
+The port is only open to LXC 211. From the laptop, tunnel it:
+
+```bash
+ssh -N -L 8100:127.0.0.1:8100 joran@192.168.5.6
+RERANKER_URL=http://127.0.0.1:8100 uv run python -m ragpipe.eval.run --modes baseline,contextual,raptor_sac
+```
+
+Each document goes over as title + content (+ the situating context for `contextual` and
+`raptor_sac`), the same fields the old semantic configs used. The three modes are available
+while `RERANKER_URL` is set and its `/health` answers; the probe is cached for a minute. When
+the Spark is down `/modes` says `available: false, reason: "reranker-offline"`, `/run` answers
+503 and the eval skips them. If it drops mid-query you get the same 503, not a quiet fallback
+to score-sorting: that would be a different pipeline wearing the same name.
 
 The Postgres tests need a throwaway database and skip without one:
 
@@ -191,10 +214,12 @@ own rate for that `deployment`.
 - `usageMissing: true` means the call was made but the provider reported no counts (or the call
   timed out). The counts are `null`, never estimated, and a line goes to stderr.
 - Calls that cost nothing are left out: a cached query embedding, the score-sort reranker used
-  by `graphrag`, `combined` and the agentic modes. A run with no paid call reports `[]`.
+  by `graphrag`, `combined` and the agentic modes, and the Spark's cross-encoder (homelab
+  hardware, nobody bills it). A run with no paid call reports `[]`.
 - A run that fails returns no payload, so its usage is not reported.
 
-Requires the same Azure env vars as the pipeline plus `RAG_DATABASE_URL` (see `.env.example`). The service is
+Requires the same Azure env vars as the pipeline plus `RAG_DATABASE_URL`, and `RERANKER_URL` /
+`RERANKER_API_KEY` for the rerank modes (see `.env.example`). The service is
 intended to sit behind the website's Spring backend, which owns rate-limiting and the
 daily budget cap — do not expose it publicly unguarded.
 
