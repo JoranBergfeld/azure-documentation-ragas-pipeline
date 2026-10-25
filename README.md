@@ -275,6 +275,9 @@ Regenerate it after a new eval run with:
 uv run python scripts/plot_eval_results.py   # reads eval_results_<mode>.json → docs/eval-results.svg
 ```
 
+The files only hold the latest run. Earlier numbers, and what changed between runs, are in
+[docs/eval-history.md](docs/eval-history.md). Add an entry there before overwriting them.
+
 ## Test
 
 ```bash
