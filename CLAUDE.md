@@ -1,4 +1,4 @@
-# Copilot instructions for `ragpipe`
+# ragas-infused-pipeline (`ragpipe`)
 
 Observable hybrid-retrieval RAG over Microsoft/Azure docs, evaluated with RAGAS.
 Generation, embeddings and judges run on Microsoft Agent Framework + Azure AI Foundry;
@@ -11,12 +11,14 @@ behind every significant design decision.
 ## Environment & commands
 
 - **`uv` manages everything.** `uv sync` creates `.venv` and installs prod + dev deps
-  from `uv.lock`. There is no manual activation — **prefix every command with `uv run`**
+  from `uv.lock`. There is no manual activation, so **prefix every command with `uv run`**
   (e.g. `uv run python -m ragpipe.ingest`, `uv run streamlit run app/dashboard.py`).
 - **Test:** `uv run pytest -q` (full suite). Single file / single test:
   `uv run pytest tests/test_config.py -q` ·
   `uv run pytest "tests/test_config.py::test_settings_loads_from_env" -q`.
-- **Lint:** `uv run ruff check .` (line-length 100, target py311). Run it before committing.
+- **Lint:** `uv run ruff check .` (line-length 100, target py311). Run it before committing. CI
+  (`publish-image.yml`) runs ruff + pytest on every PR and push, and only publishes the
+  image when they pass.
 - `pytest` is configured with `asyncio_mode = "auto"` (async tests need no marker) and
   `pythonpath = ["src", "."]`. Tests run in deterministic order (no `pytest-randomly`).
 - Python 3.11+ (`requires-python`); the API image is `python:3.11-slim`.
@@ -39,12 +41,12 @@ Three phases (see the diagram in `README.md` / `docs/pipeline*.svg`):
 3. **Evaluation** (`ragpipe.eval.run`): replays the pipeline over `data/testset.jsonl`,
    scoring deterministic per-stage retrieval metrics + the RAGAS suite vs. a frozen baseline.
 
-**Retrieval substrate seam (ADR-0012) — the central extension point.** Every strategy
+**Retrieval substrate seam (ADR-0012), the central extension point.** Every strategy
 implements the `RetrievalSubstrate` protocol (`name` + `async retrieve`). Strategies are
 keyed by `RetrievalMode` in `retrieval/registry.py`; `registered_modes()` returns the **9
 live modes** (`contextual`, `baseline`, `raptor_sac`, `graphrag`, `combined` + their
-`*_agentic` wrappers — note there is **no** `contextual_agentic`). Adding a strategy =
-implement the protocol, add index config in `Settings`, register it — nothing downstream
+`*_agentic` wrappers; there is **no** `contextual_agentic`). Adding a strategy =
+implement the protocol, add its table to `pgstore.py`, register it. Nothing downstream
 of retrieval changes. `PipelineState.stages` is a **dynamic `dict[str, list[Chunk]]`**;
 each substrate names its own stages and the final set is always mirrored under `"reranked"`.
 Do not reintroduce fixed `dense`/`bm25` stage fields.
@@ -53,17 +55,17 @@ Do not reintroduce fixed `dense`/`bm25` stage fields.
 gate (Claude/Anthropic, `JUDGE_MODEL`), and the offline RAGAS judge (DeepSeek,
 `OFFLINE_JUDGE_MODEL`) are deliberately different model families to avoid self-preference
 bias. `foundry_judge.judge_provider()` routes Anthropic vs. the OpenAI-compatible Foundry
-route. `JUDGE_MODEL` is required — builders raise rather than silently fall back to the generator.
+route. `JUDGE_MODEL` is required: builders raise rather than silently fall back to the generator.
 
 **Two app surfaces.** `app/dashboard.py` (Streamlit: Run / Evaluation / Architecture tabs)
-and `app/api.py` (FastAPI: `/run`, `/compare`, `/eval`, `/health`). The API reuses the
+and `app/api.py` (FastAPI: `/run`, `/run/stream`, `/compare`, `/eval`, `/modes`, `/health`). The API reuses the
 pipeline and imports the dashboard's *pure* helpers. `mode` is **caller-supplied and
-required** everywhere — an omitted/unknown mode returns HTTP 422; there is no server default.
+required** everywhere: an omitted/unknown mode returns HTTP 422; there is no server default.
 
 ## Conventions specific to this repo
 
 - **`from __future__ import annotations`** is at the top of every module (annotations are
-  strings at runtime — relevant for pydantic/Agent-Framework decorators; see notes in
+  strings at runtime, which matters for pydantic/Agent-Framework decorators; see notes in
   `workflow.build_viz_workflow` and `guardrail.prewarm_ragas_imports`).
 - **Config:** `Settings` is a frozen dataclass built via `Settings.from_env()` (uses
   `load_dotenv`). `RetrievalMode(str, Enum)` members serialize to their `.value` and work
@@ -71,7 +73,7 @@ required** everywhere — an omitted/unknown mode returns HTTP 422; there is no 
 - **Testing pattern:** pure logic is unit-tested with fakes/dataclass stand-ins and **no
   network** (construct `Settings(...)` directly, or a minimal `_S` stub). Live Azure wiring
   (`main()`, `build_pipeline_fn`, the live judge builders) is marked `# pragma: no cover`.
-- **RAGAS/langchain import hazard:** import `langchain_openai` *before* `ragas` —
+- **RAGAS/langchain import hazard:** import `langchain_openai` *before* `ragas`;
   `guardrail._ensure_ragas_importable()` does this and installs a `vertexai` placeholder.
   For judges on the OpenAI-compatible Foundry route, build `AzureChatOpenAI(model=<deployment>)`
   (a null model 400s on the sglang-backed deployments). Every live LLM/judge client is built
@@ -80,7 +82,7 @@ required** everywhere — an omitted/unknown mode returns HTTP 422; there is no 
   `ragpipe.usage.record_*` at the point the provider response is in hand; `run_pipeline`
   collects them into `PipelineState.usage`. A new paid call needs its own `record_*` line.
   Usage only, no prices.
-- **Search index `context` field is retrieval-only.** Embeddings are computed from
+- **The `context` column is retrieval-only.** Embeddings are computed from
   `context + "\n\n" + content`, but retrievers select only `content` into prompts/judging.
 - **Docs discipline:** record significant decisions as an ADR in `docs/adr/NNNN-kebab.md`
   (Nygard format: Context / Decision / Consequences / **Sources**), written *in the same
@@ -89,7 +91,6 @@ required** everywhere — an omitted/unknown mode returns HTTP 422; there is no 
 - **Eval outputs:** each mode writes a committed, resumable `eval_results_<mode>.json`
   checkpoint; the combined `eval_results.json` (read by `/eval` and the dashboard) is rebuilt
   from them and stays gitignored.
-- **Commits:** include the trailer `Co-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>`.
 
 ## Provisioning & deploy
 
@@ -97,3 +98,11 @@ required** everywhere — an omitted/unknown mode returns HTTP 422; there is no 
 `postprovision` hook runs `ragpipe.ingest` + `scripts/setup_agents.py`. Default region is
 **swedencentral** (only region with Claude + gpt-5.4 + embeddings, ADR-0008). Pushes to
 `main` build the API container and publish it to GHCR (`.github/workflows/publish-image.yml`).
+
+## Checking the live deploy
+
+The site's `/demos/rag` (whoami.joranbergfeld.com) is the working example of a client. The
+calls live in the personal-website repo; `docs/subsystems/rag-and-budget.md` there maps them:
+our `/modes` feeds its `/rag/status`, our `/run/stream` sits behind `/api/rag/query/stream`.
+A rerank mode is really reranking when the `reranked` stage has 0 to 1 cross-encoder scores,
+not RRF's ~0.03.

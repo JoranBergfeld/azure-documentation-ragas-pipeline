@@ -1,6 +1,7 @@
 name: publish-image
 
-# Build the container image and push it to GHCR on every push to main, so the
+# Lint and test every PR and push. On main, if that passes, build the container
+# image and push it to GHCR, so the
 # homelab personal-website stack can pull
 # ghcr.io/joranbergfeld/ragas-infused-pipeline:latest. (Until 2026-10-25 the repo,
 # and so the image, was azure-documentation-ragas-pipeline; that package is frozen.)
@@ -9,6 +10,7 @@ name: publish-image
 on:
   push:
     branches: [main]
+  pull_request:
   workflow_dispatch:
 
 # Cancel an in-flight build for the same ref when a newer push lands.
@@ -17,8 +19,25 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  check:
+    name: ruff + pytest
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v6
+
+      # --locked fails if uv.lock is out of date with pyproject.toml.
+      - run: uv sync --locked
+      - run: uv run ruff check .
+      - run: uv run pytest -q
+
   publish:
     name: build + push · ghcr.io
+    # A red suite never reaches homelab: it pulls :latest.
+    needs: check
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     permissions:
       contents: read
