@@ -128,19 +128,30 @@ def test_build_reranker_is_passthrough_outside_the_rerank_modes():
         assert isinstance(build_reranker(_settings(), mode), PassthroughReranker)
 
 
-def test_build_reranker_uses_the_cross_encoder_with_each_modes_fields(monkeypatch):
+def test_build_reranker_uses_the_cross_encoder_with_each_modes_fields():
     from ragpipe.app_wiring import build_reranker
     from ragpipe.config import RetrievalMode
     from ragpipe.retrieval.cross_encoder import CrossEncoderReranker
 
-    monkeypatch.setenv("RERANKER_URL", "http://spark:8100")
+    from dataclasses import replace
+
+    from ragpipe.model_roles import ModelRole, RoleEndpoint
+
+    settings = replace(
+        _settings(),
+        endpoints={
+            ModelRole.RERANKER: RoleEndpoint(
+                role=ModelRole.RERANKER, model=None, url="http://spark:8100"
+            )
+        },
+    )
     expected = {
         RetrievalMode.CONTEXTUAL: True,
         RetrievalMode.BASELINE: False,
         RetrievalMode.RAPTOR_SAC: True,
     }
     for mode, with_context in expected.items():
-        reranker = build_reranker(_settings(), mode)
+        reranker = build_reranker(settings, mode)
         assert isinstance(reranker, CrossEncoderReranker)
         assert reranker._with_context is with_context
         assert reranker._mode is mode

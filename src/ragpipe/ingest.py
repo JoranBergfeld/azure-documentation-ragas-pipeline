@@ -259,7 +259,9 @@ def main(limit: int | None = None) -> None:  # pragma: no cover - integration en
     from azure.search.documents.indexes import SearchIndexClient
 
     from ragpipe.config import Settings
-    from ragpipe.context_gen import ContextGenerator, build_context_complete_fn
+    from ragpipe.context_gen import ContextGenerator
+    from ragpipe import model_roles
+    from ragpipe.model_roles import ModelRole
     from ragpipe.embeddings import build_batch_embed_fn
     from ragpipe.search_index import create_index
 
@@ -272,7 +274,8 @@ def main(limit: int | None = None) -> None:  # pragma: no cover - integration en
     cred = DefaultAzureCredential()
     embed_batch = build_batch_embed_fn(settings)
     context_gen = ContextGenerator(
-        build_context_complete_fn(settings), model=settings.foundry_chat_model
+        model_roles.complete_fn(settings, ModelRole.INGEST_WRITER),
+        model=settings.endpoint(ModelRole.INGEST_WRITER).model,
     )
 
     pages = fetch_pages(urls)
@@ -336,7 +339,9 @@ def build_raptor(settings: Any, limit: int | None = None) -> None:  # pragma: no
     from azure.search.documents import SearchClient
     from azure.search.documents.indexes import SearchIndexClient
 
-    from ragpipe.context_gen import ContextGenerator, build_context_complete_fn
+    from ragpipe.context_gen import ContextGenerator
+    from ragpipe import model_roles
+    from ragpipe.model_roles import ModelRole
     from ragpipe.embeddings import build_batch_embed_fn
     from ragpipe.raptor import RaptorNode, build_raptor_tree, pack_passages
     from ragpipe.search_index import build_index
@@ -349,7 +354,8 @@ def build_raptor(settings: Any, limit: int | None = None) -> None:  # pragma: no
     cred = DefaultAzureCredential()
     embed_batch = build_batch_embed_fn(settings)
     context_gen = ContextGenerator(
-        build_context_complete_fn(settings), model=settings.foundry_chat_model
+        model_roles.complete_fn(settings, ModelRole.INGEST_WRITER),
+        model=settings.endpoint(ModelRole.INGEST_WRITER).model,
     )
 
     pages = fetch_pages(urls)
@@ -369,10 +375,10 @@ def build_raptor(settings: Any, limit: int | None = None) -> None:  # pragma: no
         for d in leaf_docs
     ]
 
-    # 3. Summarizer: bounded chat-completion, same client factory as context_gen.
+    # 3. Summarizer: the ingest writer role, same as the situating context.
     #    Not content-address-cached (ADR-0005 style); would need a separate cache
     #    keyed on cluster membership which changes every ingest. Acceptable for now.
-    complete_fn = build_context_complete_fn(settings)
+    complete_fn = model_roles.complete_fn(settings, ModelRole.INGEST_WRITER)
 
     SUMMARY_PROMPT = (
         "You are a technical writer. Write a concise abstractive summary of the "
@@ -587,7 +593,9 @@ def build_graph(
 
     import yaml
 
-    from ragpipe.context_gen import ContextGenerator, build_context_complete_fn
+    from ragpipe.context_gen import ContextGenerator
+    from ragpipe import model_roles
+    from ragpipe.model_roles import ModelRole
     from ragpipe.embeddings import build_batch_embed_fn
     from ragpipe.graphrag import (
         Community,
@@ -618,8 +626,10 @@ def build_graph(
         return
 
     embed_batch = build_batch_embed_fn(settings)
-    complete_fn = build_context_complete_fn(settings)
-    context_gen = ContextGenerator(complete_fn, model=settings.foundry_chat_model)
+    complete_fn = model_roles.complete_fn(settings, ModelRole.INGEST_WRITER)
+    context_gen = ContextGenerator(
+        complete_fn, model=settings.endpoint(ModelRole.INGEST_WRITER).model
+    )
 
     pages = fetch_pages(urls)
     if not pages:

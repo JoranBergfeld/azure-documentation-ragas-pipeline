@@ -1,91 +1,27 @@
-"""Embedding helper.
+"""The embedder role: query embeddings in a run, batches during ingest and import.
 
-`FoundryEmbeddingClient` (agent_framework.foundry) targets the Azure AI *Inference*
-(`/models`) API, which serves Models-as-a-Service models (Cohere, etc.). Our embedding
-model, `text-embedding-3-small`, is an **Azure OpenAI** deployment — served only on the
-`/openai` route, not `/models`. (Calling the `/models` route for it returns HTTP 200 with
-an empty body and `grpc-message: Unrecognized endpoint`.) So for an Azure OpenAI embedding
-model the correct client is the OpenAI-compatible one, not `FoundryEmbeddingClient`.
-
-We reach the deployed model through the Foundry account's Azure OpenAI endpoint
-(`<account>.openai.azure.com`) with a Microsoft Entra token — no API key. Generation still
-uses `FoundryAgent` (the Foundry Agent Service); only embeddings use this OpenAI path,
-which matches how the embedding model is actually served.
+Which host serves it (the Foundry account's Azure OpenAI route, or an
+OpenAI-compatible server like the DGX Spark) is ``model_roles``' business; both speak
+the openai SDK, so this module only owns how inputs are clipped, batched and ordered.
+(On Foundry the embedding model is an Azure OpenAI deployment on the ``/openai``
+route, which is why it doesn't go through ``FoundryEmbeddingClient``: that targets
+the Inference ``/models`` API and answers 200 with an empty body for it.)
 """
 from __future__ import annotations
 
 from typing import Callable
-from urllib.parse import urlparse
 
 from ragpipe.config import Settings
+from ragpipe.model_roles import ModelRole, openai_client
 from ragpipe.usage import STAGE_QUERY_EMBEDDING, record_openai_embedding
-
-COGNITIVE_SERVICES_SCOPE = "https://cognitiveservices.azure.com/.default"
-
-
-def openai_endpoint_from_project(project_endpoint: str) -> str:
-    """Derive the account's Azure OpenAI endpoint from a Foundry project endpoint.
-
-    e.g. https://ragpipe-foundry.services.ai.azure.com/api/projects/ragpipe-project
-      -> https://ragpipe-foundry.openai.azure.com/
-    """
-    host = urlparse(project_endpoint).netloc
-    account = host.split(".", 1)[0]
-    if not account:
-        raise ValueError(f"Cannot derive account name from endpoint: {project_endpoint!r}")
-    return f"https://{account}.openai.azure.com/"
-
-
-def services_endpoint_from_project(project_endpoint: str) -> str:
-    """Strip the project path: the account's services.ai.azure.com root.
-
-    The OpenAI-compatible route on this host serves non-OpenAI models sold by
-    Azure (e.g. DeepSeek-V4-Pro) at /openai/deployments/<name> — the plain
-    <account>.openai.azure.com host serves only Azure OpenAI deployments.
-    """
-    host = urlparse(project_endpoint).netloc
-    if not host:
-        raise ValueError(f"Cannot derive host from endpoint: {project_endpoint!r}")
-    return f"https://{host}"
-
-
-def anthropic_endpoint_from_project(project_endpoint: str) -> str:
-    """Base URL for the account's Anthropic Messages route (Claude deployments).
-
-    The anthropic SDK appends /v1/messages, matching the documented target
-    https://<account>.services.ai.azure.com/anthropic/v1/messages.
-    """
-    return f"{services_endpoint_from_project(project_endpoint)}/anthropic"
-
-
-def _build_client(settings: Settings, api_version: str, timeout: float, max_retries: int):  # pragma: no cover - live Azure
-    """Build an AzureOpenAI client for the account's /openai endpoint with Entra auth.
-
-    `timeout` + `max_retries` matter for bulk work: without a timeout a throttled
-    call blocks its worker thread indefinitely; bounded retries back off on 429s.
-    """
-    from azure.identity import DefaultAzureCredential, get_bearer_token_provider
-    from openai import AzureOpenAI
-
-    token_provider = get_bearer_token_provider(
-        DefaultAzureCredential(), COGNITIVE_SERVICES_SCOPE
-    )
-    return AzureOpenAI(
-        azure_endpoint=openai_endpoint_from_project(settings.foundry_project_endpoint),
-        azure_ad_token_provider=token_provider,
-        api_version=api_version,
-        timeout=timeout,
-        max_retries=max_retries,
-    )
 
 
 def build_embed_fn(
     settings: Settings,
-    api_version: str = "2024-10-21",
     timeout: float = 30.0,
     max_retries: int = 8,
-) -> Callable[[str], list[float]]:  # pragma: no cover - live Azure call
-    """Return a synchronous `embed(text) -> list[float]` over Azure OpenAI + Entra auth.
+) -> Callable[[str], list[float]]:  # pragma: no cover - live model call
+    """Return a synchronous `embed(text) -> list[float]` for the embedder role.
 
     The underlying `openai` client is synchronous, so the returned callable is safe to
     invoke from inside a running event loop (the retrievers call it that way).
@@ -95,16 +31,13 @@ def build_embed_fn(
     openai client otherwise waits on the socket forever). With them, 429s back off
     and retry a bounded number of times, then raise instead of hanging.
     """
-    client = _build_client(settings, api_version, timeout, max_retries)
+    client = openai_client(settings, ModelRole.EMBEDDER, timeout=timeout, max_retries=max_retries)
+    model = settings.endpoint(ModelRole.EMBEDDER).model
 
     def embed(text: str) -> list[float]:
-        result = client.embeddings.create(
-            model=settings.foundry_embedding_model, input=[text]
-        )
+        result = client.embeddings.create(model=model, input=[text])
         # No-op outside a pipeline run, so ingest callers are unaffected.
-        record_openai_embedding(
-            STAGE_QUERY_EMBEDDING, settings.foundry_embedding_model, result
-        )
+        record_openai_embedding(STAGE_QUERY_EMBEDDING, model, result)
         return list(result.data[0].embedding)
 
     return embed
@@ -143,12 +76,11 @@ def _embed_in_chunks(
 
 def build_batch_embed_fn(
     settings: Settings,
-    api_version: str = "2024-10-21",
     timeout: float = 60.0,
     max_retries: int = 10,
     max_inputs_per_request: int = 512,
     on_tokens: Callable[[int], None] | None = None,
-) -> Callable[[list[str]], list[list[float]]]:  # pragma: no cover - live Azure call
+) -> Callable[[list[str]], list[list[float]]]:  # pragma: no cover - live model call
     """Return `embed_batch(texts) -> list[vector]` sending many inputs per request.
 
     The embeddings API accepts an array of inputs in a single request, so a batch
@@ -165,12 +97,11 @@ def build_batch_embed_fn(
     ``on_tokens`` gets each request's billed prompt tokens, for callers that
     report their own spend (the Postgres import).
     """
-    client = _build_client(settings, api_version, timeout, max_retries)
+    client = openai_client(settings, ModelRole.EMBEDDER, timeout=timeout, max_retries=max_retries)
+    model = settings.endpoint(ModelRole.EMBEDDER).model
 
     def _embed_one(sub: list[str]) -> list[list[float]]:
-        result = client.embeddings.create(
-            model=settings.foundry_embedding_model, input=sub
-        )
+        result = client.embeddings.create(model=model, input=sub)
         if on_tokens is not None:
             on_tokens(result.usage.prompt_tokens)
         ordered = sorted(result.data, key=lambda d: d.index)

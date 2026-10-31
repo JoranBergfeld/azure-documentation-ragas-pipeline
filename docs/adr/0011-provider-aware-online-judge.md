@@ -1,6 +1,6 @@
 # 0011 — Provider-aware online judge
 
-**Status:** Accepted (2026-06-11)
+**Status:** Accepted (2026-06-11), amended by ADR-0022: provider routing now lives in `model_roles` and only applies on Foundry
 
 ## Context
 

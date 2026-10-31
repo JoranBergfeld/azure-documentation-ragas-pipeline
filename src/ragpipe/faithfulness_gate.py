@@ -16,6 +16,8 @@ import math
 from dataclasses import dataclass
 from typing import Any, Callable, Iterable, Mapping
 
+from ragpipe.model_roles import ModelRole, judge_chat_factory
+
 
 @dataclass(frozen=True)
 class ClaimVerdict:
@@ -137,109 +139,29 @@ class FaithfulnessGate:
 
 
 def build_faithfulness_gate(settings) -> FaithfulnessGate:
-    """The gate judged by a non-generator family (ADR-0009).
+    """The gate judged by a non-generator family (ADR-0009, ADR-0022).
 
-    The gate decides what users see, so it must not share a family with the
-    generator: a judge from the generator's own family is systematically
-    lenient on its own outputs (self-preference bias). Routed by provider
-    (ADR-0011): Claude on the /anthropic route, every other family on the
-    OpenAI-compatible route. Raises if JUDGE_MODEL is unset — silently falling
-    back to the generator would recreate the circular setup this replaces.
+    The gate decides what users see, so it must not share a model family with the
+    generator: a judge is systematically lenient on its own family's outputs. The
+    online judge role says where it's served (``model_roles``). Raises if JUDGE_MODEL
+    is unset: silently falling back to the generator would recreate the circular
+    setup this replaces.
     """
-    if not settings.judge_model:
+    if not settings.endpoint(ModelRole.ONLINE_JUDGE).model:
         raise ValueError(
             "JUDGE_MODEL is required: the faithfulness gate is judged by a "
             "non-generator family (ADR-0009); set it in .env"
         )
-    from ragpipe.foundry_judge import judge_provider
-
-    if judge_provider(settings.judge_model) == "anthropic":
-        return FaithfulnessGate(_claude_metric_factory(settings))
-    return FaithfulnessGate(_openai_metric_factory(settings))
+    new_chat = judge_chat_factory(settings, ModelRole.ONLINE_JUDGE)
+    return FaithfulnessGate(lambda: _faithfulness_metric(new_chat()))
 
 
-def _claude_metric_factory(settings) -> Callable[[], Any]:  # pragma: no cover - live wiring
+def _faithfulness_metric(chat):  # pragma: no cover - builds the real RAGAS metric
     ensure_ragas_importable()
-
-    from azure.identity import DefaultAzureCredential, get_bearer_token_provider
-    from langchain_anthropic import ChatAnthropic
     from ragas.llms import LangchainLLMWrapper
     from ragas.metrics import Faithfulness
 
-    from ragpipe.embeddings import anthropic_endpoint_from_project
-    from ragpipe.foundry_judge import AI_FOUNDRY_SCOPE, JUDGE_MAX_RETRIES, JUDGE_TIMEOUT
-    from ragpipe.usage import STAGE_FAITHFULNESS_JUDGE, build_langchain_usage_callback
-
-    usage_callback = build_langchain_usage_callback(
-        STAGE_FAITHFULNESS_JUDGE, settings.judge_model
-    )
-    token_provider = get_bearer_token_provider(DefaultAzureCredential(), AI_FOUNDRY_SCOPE)
-    base_url = anthropic_endpoint_from_project(settings.foundry_project_endpoint)
-
-    def new_metric() -> Faithfulness:
-        # Rebuilt per scoring call: Entra bearer tokens expire (~1h) and
-        # ChatAnthropic fixes headers at construction. azure-identity caches the
-        # token, so this is cheap until a refresh is actually due.
-        judge_chat = ChatAnthropic(
-            model=settings.judge_model,
-            base_url=base_url,
-            api_key="placeholder",  # satisfies validation; nulled below
-            default_headers={"Authorization": f"Bearer {token_provider()}"},
-            max_tokens=4096,
-            temperature=0,
-            timeout=JUDGE_TIMEOUT,
-            max_retries=JUDGE_MAX_RETRIES,
-            callbacks=[usage_callback],
-        )
-        # The anthropic SDK sends X-Api-Key alongside any custom Authorization
-        # header; a gateway that validates X-Api-Key first would 401. Clearing
-        # the key on both underlying clients removes the header entirely
-        # (verified against anthropic 0.109.1: absent from built requests).
-        judge_chat._client.api_key = None
-        judge_chat._async_client.api_key = None
-        return Faithfulness(llm=LangchainLLMWrapper(judge_chat))
-
-    return new_metric
-
-
-def _openai_metric_factory(settings) -> Callable[[], Any]:  # pragma: no cover - live wiring
-    ensure_ragas_importable()
-
-    from azure.identity import DefaultAzureCredential, get_bearer_token_provider
-    from langchain_openai import AzureChatOpenAI
-    from ragas.llms import LangchainLLMWrapper
-    from ragas.metrics import Faithfulness
-
-    from ragpipe.embeddings import (
-        COGNITIVE_SERVICES_SCOPE,
-        services_endpoint_from_project,
-    )
-    from ragpipe.foundry_judge import JUDGE_MAX_RETRIES, JUDGE_TIMEOUT
-    from ragpipe.usage import STAGE_FAITHFULNESS_JUDGE, build_langchain_usage_callback
-
-    token_provider = get_bearer_token_provider(
-        DefaultAzureCredential(), COGNITIVE_SERVICES_SCOPE
-    )
-    # azure_ad_token_provider auto-refreshes, so the judge is built once (the
-    # Anthropic path rebuilds per call because ChatAnthropic fixes headers at
-    # construction). No explicit temperature: reasoning deployments on this
-    # route may reject sampling overrides (matches the offline DeepSeek judge).
-    # model= sets the request-body "model" field: sold-by-Azure servers (e.g.
-    # DeepSeek's sglang) validate it and reject a null; Kimi tolerates either.
-    judge_chat = AzureChatOpenAI(
-        azure_endpoint=services_endpoint_from_project(settings.foundry_project_endpoint),
-        azure_deployment=settings.judge_model,
-        model=settings.judge_model,
-        api_version="2024-10-21",
-        azure_ad_token_provider=token_provider,
-        timeout=JUDGE_TIMEOUT,
-        max_retries=JUDGE_MAX_RETRIES,
-        callbacks=[
-            build_langchain_usage_callback(STAGE_FAITHFULNESS_JUDGE, settings.judge_model)
-        ],
-    )
-    metric = Faithfulness(llm=LangchainLLMWrapper(judge_chat))
-    return lambda: metric
+    return Faithfulness(llm=LangchainLLMWrapper(chat))
 
 
 def ensure_ragas_importable() -> None:  # pragma: no cover

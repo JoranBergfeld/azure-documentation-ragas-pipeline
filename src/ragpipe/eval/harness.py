@@ -18,9 +18,8 @@ from ragpipe.models import PipelineState
 # job raises TimeoutError and the metric collapses to NaN (observed: faithfulness
 # 0/33, context_precision 1/33). A generous per-call timeout, a generous per-job
 # timeout, and fewer concurrent jobs let the reasoning judge actually finish.
-# These are separate from the online gate's JUDGE_TIMEOUT (foundry_judge) so
-# raising the offline eval budget does not slow live faithfulness gating.
-RAGAS_JUDGE_TIMEOUT = 300.0
+# The per-call budget is the offline judge role's (model_roles.OFFLINE_JUDGE_TIMEOUT),
+# separate from the online gate's so raising it does not slow live gating.
 RAGAS_JOB_TIMEOUT = 600.0
 RAGAS_MAX_WORKERS = 8
 
@@ -185,52 +184,16 @@ def _build_ragas_clients(settings):
     return _build_ragas_clients_live(settings)
 
 
-def _build_ragas_clients_live(settings):  # pragma: no cover - live Azure wiring
-    """Build the (llm, embeddings) RAGAS wrappers backed by Foundry models via Entra."""
-    from azure.identity import DefaultAzureCredential, get_bearer_token_provider
-    from langchain_openai import AzureChatOpenAI, AzureOpenAIEmbeddings
+def _build_ragas_clients_live(settings):  # pragma: no cover - live model wiring
+    """The (llm, embeddings) RAGAS wrappers: the offline judge and embedder roles,
+    wherever ``model_roles`` says they're served."""
     from ragas.embeddings import LangchainEmbeddingsWrapper
     from ragas.llms import LangchainLLMWrapper
 
-    from ragpipe.embeddings import (
-        openai_endpoint_from_project,
-        services_endpoint_from_project,
-    )
-    from ragpipe.foundry_judge import JUDGE_MAX_RETRIES
+    from ragpipe.model_roles import ModelRole, judge_chat_factory, langchain_embeddings
 
-    token_provider = get_bearer_token_provider(
-        DefaultAzureCredential(), "https://cognitiveservices.azure.com/.default"
-    )
-    # No explicit temperature: DeepSeek-V4-Pro is a reasoning model and, like
-    # other reasoning deployments on this route, may reject sampling overrides.
-    # model= sets the request-body "model" field: the sold-by-Azure DeepSeek
-    # server (sglang) validates it and rejects a null, unlike Azure OpenAI which
-    # takes the deployment from the URL and ignores the body field.
-    # timeout + max_retries bound every judge/embedding call: without them a
-    # stalled request blocks the eval forever (see embeddings._build_client). The
-    # reasoning judge gets RAGAS_JUDGE_TIMEOUT (larger than the online gate's
-    # JUDGE_TIMEOUT) because faithfulness/context_precision calls run for minutes.
-    llm = LangchainLLMWrapper(
-        AzureChatOpenAI(
-            azure_endpoint=services_endpoint_from_project(settings.foundry_project_endpoint),
-            azure_deployment=settings.offline_judge_model,
-            model=settings.offline_judge_model,
-            api_version="2024-10-21",
-            azure_ad_token_provider=token_provider,
-            timeout=RAGAS_JUDGE_TIMEOUT,
-            max_retries=JUDGE_MAX_RETRIES,
-        )
-    )
-    emb = LangchainEmbeddingsWrapper(
-        AzureOpenAIEmbeddings(
-            azure_endpoint=openai_endpoint_from_project(settings.foundry_project_endpoint),
-            azure_deployment=settings.foundry_embedding_model,
-            api_version="2024-10-21",
-            azure_ad_token_provider=token_provider,
-            timeout=RAGAS_JUDGE_TIMEOUT,
-            max_retries=JUDGE_MAX_RETRIES,
-        )
-    )
+    llm = LangchainLLMWrapper(judge_chat_factory(settings, ModelRole.OFFLINE_JUDGE)())
+    emb = LangchainEmbeddingsWrapper(langchain_embeddings(settings))
     return llm, emb
 
 

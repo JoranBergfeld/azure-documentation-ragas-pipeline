@@ -107,30 +107,3 @@ class ContextGenerator:
         with self._lock:
             self.fallback_count += 1
         return ""
-
-
-def build_context_complete_fn(
-    settings, api_version: str = "2024-10-21", timeout: float = 60.0, max_retries: int = 5
-) -> Callable[[str], str]:  # pragma: no cover - live Azure call
-    """`complete(prompt) -> str` over the account's /openai endpoint.
-
-    No explicit temperature: gpt-5-family reasoning deployments reject
-    non-default temperature values. Determinism comes from the content-addressed
-    cache (ADR-0005), not from sampling parameters.
-    """
-    from ragpipe.embeddings import _build_client
-    from ragpipe.usage import STAGE_PLAN, record_openai_chat
-
-    client = _build_client(settings, api_version, timeout, max_retries)
-
-    def complete(prompt: str) -> str:
-        resp = client.chat.completions.create(
-            model=settings.foundry_chat_model,
-            messages=[{"role": "user", "content": prompt}],
-        )
-        # Inside a pipeline run the only caller is the agentic planner; ingest
-        # runs outside one, where this records nothing.
-        record_openai_chat(STAGE_PLAN, settings.foundry_chat_model, resp)
-        return resp.choices[0].message.content or ""
-
-    return complete

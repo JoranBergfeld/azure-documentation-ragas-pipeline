@@ -12,7 +12,7 @@ import json
 
 from ragpipe.config import Settings
 from ragpipe.eval.synthetic import make_candidates, page_text_from_table
-from ragpipe.foundry_judge import build_judge_complete_fn
+from ragpipe.model_roles import ModelRole, complete_fn
 from ragpipe.pgstore import MS_DOCS, PgTable, open_pool
 
 
@@ -24,7 +24,7 @@ def main() -> None:
 
     settings = Settings.from_env()
     table = PgTable(open_pool(settings.rag_database_url), MS_DOCS)
-    complete = build_judge_complete_fn(settings)
+    complete = complete_fn(settings, ModelRole.ONLINE_JUDGE)
 
     rows = []
     for url in args.urls:

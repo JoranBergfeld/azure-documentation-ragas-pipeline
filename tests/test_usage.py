@@ -209,9 +209,16 @@ def test_embed_fn_records_query_embedding(monkeypatch):
                 usage=SimpleNamespace(prompt_tokens=7),
             )
 
-    monkeypatch.setattr(embeddings, "_build_client", lambda *a, **k: _Client())
+    from ragpipe.config import Settings
+
+    monkeypatch.setattr(embeddings, "openai_client", lambda *a, **k: _Client())
     embed = embeddings.build_embed_fn(
-        SimpleNamespace(foundry_embedding_model="text-embedding-3-small")
+        Settings(
+            foundry_project_endpoint="https://acct.services.ai.azure.com",
+            foundry_chat_model="gpt-5.4",
+            foundry_embedding_model="text-embedding-3-small",
+            generator_agent_name="gen",
+        )
     )
     with collect_usage([]) as entries:
         assert embed("what is RRF?") == [0.1, 0.2]
