@@ -4,49 +4,10 @@ from pathlib import Path
 
 import pytest
 
-from ragpipe.canary import (
-    CanaryItem,
-    evaluate_canary,
-    load_canary_items,
-    parse_claim_verdicts,
-)
+from ragpipe.canary import CanaryItem, evaluate_canary, load_canary_items
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 CANARY_FILE = REPO_ROOT / "data" / "faithfulness_canary.jsonl"
-
-
-class _Stmt:
-    """Stand-in for RAGAS StatementFaithfulnessAnswer (attribute access)."""
-
-    def __init__(self, statement, verdict, reason=""):
-        self.statement = statement
-        self.verdict = verdict
-        self.reason = reason
-
-
-def test_parse_claim_verdicts_from_ragas_like_objects():
-    claims = parse_claim_verdicts(
-        [_Stmt("The sky is blue.", 1, "stated"), _Stmt("The sky is green.", 0, "contradicted")]
-    )
-    assert [c.faithful for c in claims] == [True, False]
-    assert claims[0].claim == "The sky is blue."
-    assert claims[1].reason == "contradicted"
-
-
-def test_parse_claim_verdicts_from_dicts_and_coerces_verdict_forms():
-    claims = parse_claim_verdicts(
-        [
-            {"claim": "a", "verdict": "1"},
-            {"statement": "b", "verdict": False},
-            {"statement": "c", "verdict": "yes"},
-        ]
-    )
-    assert [c.faithful for c in claims] == [True, False, True]
-
-
-def test_parse_claim_verdicts_rejects_uninterpretable_verdict():
-    with pytest.raises(ValueError, match="cannot interpret"):
-        parse_claim_verdicts([{"statement": "x", "verdict": "perhaps"}])
 
 
 def _items():

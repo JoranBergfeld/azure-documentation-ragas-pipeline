@@ -9,7 +9,7 @@ import pytest
 from ragpipe import usage
 from ragpipe.app_wiring import make_deps
 from ragpipe.generate import Generator
-from ragpipe.guardrail import FaithfulnessScorer
+from ragpipe.faithfulness_gate import ScoredClaims
 from ragpipe.models import Chunk
 from ragpipe.retrieval.passthrough import PassthroughReranker
 from ragpipe.retrieval.substrate import RetrievalResult
@@ -116,9 +116,9 @@ def test_agent_response_with_code_interpreter_adds_one_session():
 
 
 async def test_langchain_callback_records_each_llm_call():
-    from ragpipe.guardrail import _ensure_ragas_importable
+    from ragpipe.faithfulness_gate import ensure_ragas_importable
 
-    _ensure_ragas_importable()  # safe langchain import order, as the gate does
+    ensure_ragas_importable()  # safe langchain import order, as the gate does
     from langchain_core.language_models.fake_chat_models import GenericFakeChatModel
     from langchain_core.messages import AIMessage
 
@@ -176,9 +176,9 @@ async def test_langchain_callback_records_each_llm_call():
 
 
 def test_langchain_callback_flags_a_timed_out_call_but_not_a_rejected_one(capsys):
-    from ragpipe.guardrail import _ensure_ragas_importable
+    from ragpipe.faithfulness_gate import ensure_ragas_importable
 
-    _ensure_ragas_importable()
+    ensure_ragas_importable()
     callback = usage.build_langchain_usage_callback("faithfulness_judge", "claude-sonnet-4-6")
 
     class APITimeoutError(Exception):  # SDK timeouts do not subclass TimeoutError
@@ -266,6 +266,17 @@ def _judge(scores, calls_per_score=2):
     return metric_fn
 
 
+class _Gate:
+    """Faithfulness gate stand-in over a metric stand-in."""
+
+    def __init__(self, metric_fn):
+        self._metric_fn = metric_fn
+
+    async def score(self, query, answer, contexts):
+        score = await self._metric_fn(question=query, answer=answer, contexts=contexts)
+        return ScoredClaims(score=score, claims=[])
+
+
 def _deps(*, reranker, agent, scores, embed=None):
     async def retrieve(query, k, on_event=None):
         if embed is not None:
@@ -278,7 +289,7 @@ def _deps(*, reranker, agent, scores, embed=None):
         retrieve=retrieve,
         reranker=reranker,
         generator=Generator(agent, deployment="gpt-5.4"),
-        scorer=FaithfulnessScorer(_judge(scores)),
+        gate=_Gate(_judge(scores)),
     )
 
 
@@ -344,7 +355,7 @@ async def test_run_without_paid_calls_reports_empty_list():
         retrieve=retrieve,
         rerank=lambda q, c, k: PassthroughReranker(2).rerank(q, c, k),
         generate=lambda q, chunks, prev: "cached answer",
-        score=lambda q, a, c: 0.9,
+        score=lambda q, a, c: ScoredClaims(score=0.9, claims=[]),
     )
     state = await run_pipeline("q", deps)
     assert state.usage == []
@@ -400,7 +411,7 @@ async def test_judge_failure_keeps_usage_of_calls_already_made():
         retrieve=_deps(reranker=None, agent=None, scores=[]).retrieve,
         reranker=PassthroughReranker(2),
         generator=Generator(_Agent([_gen_usage()]), deployment="gpt-5.4"),
-        scorer=FaithfulnessScorer(metric_fn),
+        gate=_Gate(metric_fn),
     )
     state = await run_pipeline("q", deps)
 

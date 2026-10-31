@@ -89,6 +89,19 @@ def _state_payload(mode: str, state: PipelineState) -> dict[str, Any]:
         "stages": stage_chunk_tables(state),
         # Every metered call the run made, in call order; [] when none (ADR-0020).
         "usage": [entry.to_dict() for entry in state.usage],
+        # The gate's result per attempt, claim verdicts included (ADR-0018), the
+        # same facts the stream's faithfulness and decision steps carry.
+        "attempts": [_gate_result(e.data) for e in state.trace if e.stage == "faithfulness"],
+    }
+
+
+def _gate_result(data: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "attempt": data["attempt"],
+        "score": _json_safe(data["score"]),
+        "threshold": data["threshold"],
+        "claims": data["claims"],
+        "decision": data["decision"],
     }
 
 

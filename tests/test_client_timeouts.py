@@ -75,7 +75,7 @@ class _FakeMetric:
         return 1.0
 
     # The gate drives RAGAS's two-call faithfulness seam to keep per-claim
-    # verdicts (canary.score_with_claims, ADR-0018).
+    # verdicts (faithfulness_gate.score_with_claims, ADR-0018).
     async def _create_statements(self, row, callbacks):
         return SimpleNamespace(statements=["s"])
 
@@ -123,9 +123,9 @@ def test_anthropic_judge_complete_passes_timeout_and_retries(monkeypatch):
 def test_openai_faithfulness_passes_timeout_and_retries(monkeypatch):
     import langchain_openai
 
-    from ragpipe import foundry_judge, guardrail
+    from ragpipe import faithfulness_gate, foundry_judge
 
-    guardrail._ensure_ragas_importable()
+    faithfulness_gate.ensure_ragas_importable()
     import ragas.llms
     import ragas.metrics
 
@@ -135,7 +135,7 @@ def test_openai_faithfulness_passes_timeout_and_retries(monkeypatch):
     monkeypatch.setattr(ragas.llms, "LangchainLLMWrapper", lambda x: x)
     monkeypatch.setattr(ragas.metrics, "Faithfulness", _FakeMetric)
 
-    guardrail._build_openai_faithfulness(_S())
+    faithfulness_gate._openai_metric_factory(_S())
 
     assert captured["timeout"] == foundry_judge.JUDGE_TIMEOUT
     assert captured["max_retries"] == foundry_judge.JUDGE_MAX_RETRIES
@@ -145,9 +145,9 @@ def test_openai_faithfulness_passes_timeout_and_retries(monkeypatch):
 async def test_claude_faithfulness_passes_timeout_and_retries(monkeypatch):
     import langchain_anthropic
 
-    from ragpipe import foundry_judge, guardrail
+    from ragpipe import faithfulness_gate, foundry_judge
 
-    guardrail._ensure_ragas_importable()
+    faithfulness_gate.ensure_ragas_importable()
     import ragas.llms
     import ragas.metrics
 
@@ -157,8 +157,8 @@ async def test_claude_faithfulness_passes_timeout_and_retries(monkeypatch):
     monkeypatch.setattr(ragas.llms, "LangchainLLMWrapper", lambda x: x)
     monkeypatch.setattr(ragas.metrics, "Faithfulness", _FakeMetric)
 
-    metric_fn = guardrail._build_claude_faithfulness(_S(judge_model="claude-sonnet-4-6"))
-    scored = await metric_fn(question="q", answer="a", contexts=["c"])
+    factory = faithfulness_gate._claude_metric_factory(_S(judge_model="claude-sonnet-4-6"))
+    scored = await faithfulness_gate.FaithfulnessGate(factory).score("q", "a", ["c"])
 
     assert scored.score == 1.0
     assert [c.claim for c in scored.claims] == ["s"]
@@ -169,10 +169,10 @@ async def test_claude_faithfulness_passes_timeout_and_retries(monkeypatch):
 def test_deepseek_offline_judge_passes_timeout_and_retries(monkeypatch):
     import langchain_openai
 
-    from ragpipe import foundry_judge, guardrail
+    from ragpipe import faithfulness_gate, foundry_judge
     from ragpipe.eval import harness
 
-    guardrail._ensure_ragas_importable()
+    faithfulness_gate.ensure_ragas_importable()
     import ragas.embeddings
     import ragas.llms
 

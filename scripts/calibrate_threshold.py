@@ -70,17 +70,13 @@ def main() -> int:  # pragma: no cover - live judge
     rows = _load_labeled(args.labeled)
     print(f"calibrating on {len(rows)} labeled items from {args.labeled}", flush=True)
 
-    from ragpipe.guardrail import build_ragas_faithfulness
+    from ragpipe.faithfulness_gate import build_faithfulness_gate
 
-    metric_fn = build_ragas_faithfulness(settings)
+    gate = build_faithfulness_gate(settings)
 
     labeled: list[LabeledScore] = []
     for row in rows:
-        score = asyncio.run(
-            metric_fn(
-                question=row["query"], answer=row["answer"], contexts=list(row["contexts"])
-            )
-        )
+        score = asyncio.run(gate.score(row["query"], row["answer"], list(row["contexts"]))).score
         if not (isinstance(score, (int, float)) and math.isfinite(score)):
             print(f"  dropping {row['id']}: judge returned no usable score", flush=True)
             continue

@@ -169,7 +169,9 @@ uv run uvicorn app.api:app --host 0.0.0.0 --port 8000
   yet — issue #11, ADR-0018). A mode `/modes` reports as unavailable returns 503 with
   `{"detail": {"mode": ..., "reason": ...}}`.
   The payload also carries `usage`: one entry per metered call the run made, in call order
-  (see [Usage reporting](#usage-reporting)).
+  (see [Usage reporting](#usage-reporting)), and `attempts`: the faithfulness gate's result
+  per attempt (`attempt`, `score`, `threshold`, `decision`, and the judge's `claims`, each
+  `{claim, faithful, reason}`).
 - `POST /run/stream` — same body as `/run`; returns a `text/event-stream` (Server-Sent Events).
   Frames: `event: progress` (one per phase boundary — `retrieve`, `rerank`, `generate`,
   `faithfulness`, `decision`; agentic modes also emit `retrieve.plan` / `retrieve.iter` /

@@ -66,7 +66,7 @@ required** everywhere: an omitted/unknown mode returns HTTP 422; there is no ser
 
 - **`from __future__ import annotations`** is at the top of every module (annotations are
   strings at runtime, which matters for pydantic/Agent-Framework decorators; see notes in
-  `workflow.build_viz_workflow` and `guardrail.prewarm_ragas_imports`).
+  `workflow.build_viz_workflow` and `faithfulness_gate.prewarm_ragas_imports`).
 - **Config:** `Settings` is a frozen dataclass built via `Settings.from_env()` (uses
   `load_dotenv`). `RetrievalMode(str, Enum)` members serialize to their `.value` and work
   as plain string dict keys.
@@ -74,7 +74,7 @@ required** everywhere: an omitted/unknown mode returns HTTP 422; there is no ser
   network** (construct `Settings(...)` directly, or a minimal `_S` stub). Live Azure wiring
   (`main()`, `build_pipeline_fn`, the live judge builders) is marked `# pragma: no cover`.
 - **RAGAS/langchain import hazard:** import `langchain_openai` *before* `ragas`;
-  `guardrail._ensure_ragas_importable()` does this and installs a `vertexai` placeholder.
+  `faithfulness_gate.ensure_ragas_importable()` does this and installs a `vertexai` placeholder.
   For judges on the OpenAI-compatible Foundry route, build `AzureChatOpenAI(model=<deployment>)`
   (a null model 400s on the sglang-backed deployments). Every live LLM/judge client is built
   with explicit `timeout` + `max_retries` (shared `JUDGE_TIMEOUT`/`JUDGE_MAX_RETRIES`).

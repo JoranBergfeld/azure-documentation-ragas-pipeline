@@ -8,10 +8,10 @@ them with ``ragpipe.canary.evaluate_canary`` against the calibrated gate
 threshold, writes ``faithfulness_canary_report.json``, and **exits non-zero on
 drift** so a scheduled run turns red when a judge moves.
 
-Per-claim verdicts from the offline judge are logged per item: a drift is then
+Per-claim verdicts from both judges are logged per item: a drift is then
 readable as *which decomposed claim flipped*, not just a scalar move. The online
 gate is scored through the same code path the live pipeline uses
-(``build_ragas_faithfulness``), so the canary exercises the real gate.
+(``build_faithfulness_gate``), so the canary exercises the real gate.
 """
 import asyncio
 import json
@@ -20,7 +20,7 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
-from ragpipe.canary import evaluate_canary, load_canary_items, score_with_claims
+from ragpipe.canary import evaluate_canary, load_canary_items
 from ragpipe.config import Settings
 
 CANARY_FILE = "data/faithfulness_canary.jsonl"
@@ -62,28 +62,32 @@ def main() -> int:  # pragma: no cover - live judges
     threshold = _gate_threshold(settings)
     print(f"canary: {len(items)} items, gate threshold {threshold:.3f}", flush=True)
 
-    from ragpipe.guardrail import _ensure_ragas_importable, build_ragas_faithfulness
+    from ragpipe.faithfulness_gate import (
+        build_faithfulness_gate,
+        ensure_ragas_importable,
+        score_with_claims,
+    )
 
-    _ensure_ragas_importable()
+    ensure_ragas_importable()
     from ragas.dataset_schema import SingleTurnSample
     from ragas.metrics import Faithfulness
 
     from ragpipe.eval.harness import _build_ragas_clients
 
-    online_metric_fn = build_ragas_faithfulness(settings)
+    gate = build_faithfulness_gate(settings)
     offline_llm, _ = _build_ragas_clients(settings)
     offline_metric = Faithfulness(llm=offline_llm)
 
     online_scores: dict[str, float | None] = {}
     offline_scores: dict[str, float | None] = {}
     claims_by_id: dict[str, list[dict]] = {}
+    online_claims_by_id: dict[str, list[dict]] = {}
 
     for item in items:
         print(f"  scoring {item.id} ({item.expected_label})…", flush=True)
-        online = _run(
-            online_metric_fn(question=item.query, answer=item.answer, contexts=item.contexts)
-        )
-        online_scores[item.id] = _finite_or_none(online)
+        online = _run(gate.score(item.query, item.answer, item.contexts))
+        online_scores[item.id] = _finite_or_none(online.score) if online else None
+        online_claims_by_id[item.id] = [c.to_dict() for c in online.claims] if online else []
 
         sample = SingleTurnSample(
             user_input=item.query, response=item.answer, retrieved_contexts=item.contexts
@@ -105,6 +109,7 @@ def main() -> int:  # pragma: no cover - live judges
     payload["offline_judge"] = settings.offline_judge_model
     for result in payload["results"]:
         result["offline_claims"] = claims_by_id.get(result["id"], [])
+        result["online_claims"] = online_claims_by_id.get(result["id"], [])
 
     Path(REPORT_FILE).write_text(json.dumps(payload, indent=2), encoding="utf-8")
     print(f"wrote {REPORT_FILE}", flush=True)

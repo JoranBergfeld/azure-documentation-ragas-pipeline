@@ -14,15 +14,6 @@ from ragpipe.models import PipelineState
 from ragpipe.workflow import PipelineDeps, run_pipeline
 
 
-def _score_callable(scorer):
-    """Prefer the scorer's per-claim path so the trace carries verdicts (ADR-0018);
-    a scalar-only scorer still works."""
-    detailed = getattr(scorer, "score_detailed", None)
-    if detailed is not None:
-        return lambda q, a, c: detailed(q, a, c)
-    return lambda q, a, c: scorer.score(q, a, c)
-
-
 # Which of the old semantic configs' content fields each rerank mode reads (issue
 # #40): ms_docs and raptor_sac had title + content + context, baseline had title +
 # content. Keeps the cross-encoder swap like for like.
@@ -53,12 +44,14 @@ def build_reranker(settings: Settings, mode: RetrievalMode):
     )
 
 
-def make_deps(settings, retrieve, reranker, generator, scorer) -> PipelineDeps:
+def make_deps(settings, retrieve, reranker, generator, gate) -> PipelineDeps:
     return PipelineDeps(
         retrieve=retrieve,
         rerank=lambda q, fused, k: reranker.rerank(q, fused, top_k=k),
         generate=lambda q, chunks, prev: generator.generate(q, chunks, prev),
-        score=_score_callable(scorer),
+        # The judge reads what the generator read: chunk content, never the
+        # retrieval-only situating context (ADR-0003).
+        score=lambda q, a, chunks: gate.score(q, a, [c.content for c in chunks]),
         threshold=settings.faithfulness_threshold,
         max_retries=settings.max_retries,
         top_k=settings.top_k,
@@ -90,7 +83,7 @@ def build_pipeline_fn(
 
     from ragpipe.embeddings import build_embed_fn
     from ragpipe.generate import Generator
-    from ragpipe.guardrail import FaithfulnessScorer, build_ragas_faithfulness
+    from ragpipe.faithfulness_gate import build_faithfulness_gate
     from ragpipe.pgstore import PgTable
     from ragpipe.retrieval.registry import build_substrate
 
@@ -166,7 +159,7 @@ def build_pipeline_fn(
         reranker=reranker,
         # setup_agents.py registers the agent against FOUNDRY_CHAT_MODEL.
         generator=Generator(agent, deployment=settings.foundry_chat_model),
-        scorer=FaithfulnessScorer(build_ragas_faithfulness(settings)),
+        gate=build_faithfulness_gate(settings),
     )
 
     async def pipeline_fn(query: str, *, on_event=None) -> PipelineState:

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from ragpipe.app_wiring import make_deps
 from ragpipe.config import Settings, TestsetMode
+from ragpipe.faithfulness_gate import ScoredClaims
 from ragpipe.retrieval.substrate import RetrievalResult
 
 
@@ -27,16 +28,16 @@ def test_make_deps_wires_callables_from_injected_components():
         async def generate(self, q, chunks, previous_answer=None):
             return "ans"
 
-    class FakeScorer:
-        async def score(self, q, a, c):
-            return 0.9
+    class FakeGate:
+        async def score(self, q, a, contexts):
+            return ScoredClaims(score=0.9, claims=[])
 
     deps = make_deps(
         _settings(),
         retrieve=fake_retrieve,
         reranker=FakeReranker(),
         generator=FakeGen(),
-        scorer=FakeScorer(),
+        gate=FakeGate(),
     )
 
     assert deps.threshold == 0.7
@@ -67,15 +68,15 @@ def test_make_deps_threads_top_k_and_new_signatures():
             self.prev = previous_answer
             return "a"
 
-    class _Scorer:
-        def score(self, q, a, c):
-            return 1.0
+    class _Gate:
+        def score(self, q, a, contexts):
+            return ScoredClaims(score=1.0, claims=[])
 
     async def fake_retrieve(q, k):
         return RetrievalResult(candidates=[], stages={})
 
     rr, gen = _Rerank(), _Gen()
-    deps = make_deps(_S(), retrieve=fake_retrieve, reranker=rr, generator=gen, scorer=_Scorer())
+    deps = make_deps(_S(), retrieve=fake_retrieve, reranker=rr, generator=gen, gate=_Gate())
     assert deps.top_k == 4
     deps.rerank("q", [], 9)
     assert rr.k == 9
@@ -93,22 +94,29 @@ def test_build_pipeline_fn_requires_keyword_only_mode():
     assert mode.kind is inspect.Parameter.KEYWORD_ONLY
 
 
-def test_make_deps_prefers_the_per_claim_scorer_path():
+def test_make_deps_judges_chunk_content_only():
+    """The judge reads what the generator read, never the situating context."""
+    from ragpipe.models import Chunk
+
     class _S:
         faithfulness_threshold = 0.7
         max_retries = 2
         top_k = 4
         candidate_pool = 15
 
-    class _Scorer:
-        def score(self, q, a, c):
-            return "scalar"
+    seen = {}
+    scored = ScoredClaims(score=0.4, claims=[])
 
-        def score_detailed(self, q, a, c):
-            return "detailed"
+    class _Gate:
+        def score(self, q, a, contexts):
+            seen["contexts"] = contexts
+            return scored
 
-    deps = make_deps(_S(), retrieve=None, reranker=None, generator=None, scorer=_Scorer())
-    assert deps.score("q", "a", []) == "detailed"
+    chunk = Chunk(id="a", title="T", url="u", content="body", context="situating note")
+    deps = make_deps(_S(), retrieve=None, reranker=None, generator=None, gate=_Gate())
+
+    assert deps.score("q", "a", [chunk]) is scored
+    assert seen["contexts"] == ["body"]
 
 
 def test_build_reranker_is_passthrough_outside_the_rerank_modes():

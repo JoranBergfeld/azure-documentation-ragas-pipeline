@@ -95,9 +95,9 @@ def build_synthetic_generator(
     """
     def synthetic_fn() -> list[TestItem]:
         from ragpipe.eval.harness import _build_ragas_clients
-        from ragpipe.guardrail import _ensure_ragas_importable
+        from ragpipe.faithfulness_gate import ensure_ragas_importable
 
-        _ensure_ragas_importable()
+        ensure_ragas_importable()
 
         from langchain_core.documents import Document
         from ragas.testset import TestsetGenerator
