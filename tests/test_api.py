@@ -362,8 +362,33 @@ def test_run_usage_is_additive_to_the_existing_payload():
     body = _post_run(_state())
     assert set(body) == {
         "mode", "query", "answer", "faithfulness", "attempt",
-        "lowConfidence", "abstained", "stages", "usage", "experimental",
+        "lowConfidence", "abstained", "stages", "usage", "experimental", "attempts",
     }
+
+
+def test_run_reports_the_gate_result_per_attempt():
+    claim = {"claim": "RRF was invented in 2020", "faithful": False, "reason": "absent"}
+    state = _state()
+    state.add_trace("rerank", {"k": 5})
+    state.add_trace(
+        "faithfulness",
+        {"score": 0.4, "attempt": 0, "threshold": 0.7, "claims": [claim], "decision": "retry"},
+    )
+    state.add_trace(
+        "faithfulness",
+        {"score": float("nan"), "attempt": 1, "threshold": 0.7, "claims": [],
+         "decision": "exhausted"},
+    )
+    state.add_trace("abstain", {"suppressed_answer": "secret", "score": None})
+
+    body = _post_run(state)
+
+    assert body["attempts"] == [
+        {"attempt": 0, "score": 0.4, "threshold": 0.7, "claims": [claim], "decision": "retry"},
+        {"attempt": 1, "score": None, "threshold": 0.7, "claims": [], "decision": "exhausted"},
+    ]
+    # The abstention's suppressed answer stays in the trace only.
+    assert "secret" not in json.dumps(body)
 
 
 def test_run_reports_each_guardrail_retry_separately():

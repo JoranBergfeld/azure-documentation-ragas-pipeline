@@ -1,5 +1,6 @@
 import pytest
 
+from ragpipe.faithfulness_gate import ClaimVerdict, ScoredClaims
 from ragpipe.models import Chunk, PipelineState
 from ragpipe.retrieval.substrate import RetrievalResult
 from ragpipe.workflow import ABSTENTION_ANSWER, PipelineDeps, run_pipeline
@@ -16,6 +17,11 @@ def _fake_retrieve(chunks):
             stages={"dense": chunks, "bm25": [], "fused": chunks},
         )
     return retrieve
+
+
+def _scored(value):
+    """A bare number in a score sequence stands for a score with no claims."""
+    return value if isinstance(value, ScoredClaims) else ScoredClaims(score=value, claims=[])
 
 
 def _deps(score_sequence, rerank_calls=None, generate_calls=None):
@@ -39,7 +45,7 @@ def _deps(score_sequence, rerank_calls=None, generate_calls=None):
         retrieve=_fake_retrieve(chunks),
         rerank=rerank,
         generate=generate,
-        score=lambda q, answer, chunks: next(scores),
+        score=lambda q, answer, chunks: _scored(next(scores)),
         threshold=0.7,
         max_retries=2,
         top_k=2,
@@ -171,8 +177,6 @@ async def test_no_sink_keeps_behavior_unchanged():
 
 @pytest.mark.asyncio
 async def test_per_claim_verdicts_land_in_trace_and_event():
-    from ragpipe.canary import ClaimVerdict, ScoredClaims
-
     scored = ScoredClaims(
         score=0.5,
         claims=[
@@ -191,8 +195,8 @@ async def test_per_claim_verdicts_land_in_trace_and_event():
         {"claim": "RRF fuses ranks", "faithful": True, "reason": "in ctx"},
         {"claim": "RRF was invented in 2020", "faithful": False, "reason": "absent"},
     ]
-    # A scalar-only score carries no claims.
     assert faith[1].data["claims"] == []
+    assert [f.data["decision"] for f in faith] == ["retry", "pass"]
     complete = [e for e in events if e.phase == "faithfulness" and e.status == "complete"]
     assert len(complete[0].detail["claims"]) == 2
     assert complete[0].detail["score"] == 0.5
@@ -208,4 +212,6 @@ async def test_judge_failure_traces_no_claims():
     deps.score = boom
     state = await run_pipeline("q", deps)
     faith = next(e for e in state.trace if e.stage == "faithfulness")
-    assert faith.data == {"score": None, "attempt": 0, "claims": []}
+    assert faith.data == {
+        "score": None, "attempt": 0, "threshold": 0.7, "claims": [], "decision": "exhausted",
+    }

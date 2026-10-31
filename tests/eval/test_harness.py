@@ -174,9 +174,9 @@ def test_ragas_run_config_overrides_starving_defaults():
         RAGAS_MAX_WORKERS,
         _ragas_run_config,
     )
-    from ragpipe.guardrail import _ensure_ragas_importable
+    from ragpipe.faithfulness_gate import ensure_ragas_importable
 
-    _ensure_ragas_importable()
+    ensure_ragas_importable()
     rc = _ragas_run_config()
 
     assert rc.timeout == RAGAS_JOB_TIMEOUT

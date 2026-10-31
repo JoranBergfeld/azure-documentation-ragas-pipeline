@@ -1,8 +1,7 @@
 import pytest
 
-from ragpipe import foundry_judge, guardrail
+from ragpipe import foundry_judge
 from ragpipe.foundry_judge import build_judge_complete_fn, judge_provider
-from ragpipe.guardrail import build_ragas_faithfulness, build_ragas_faithfulness_detailed
 
 
 class _S:
@@ -64,49 +63,3 @@ def test_complete_fn_dispatches_openai_for_kimi(monkeypatch):
 def test_complete_fn_requires_judge_model():
     with pytest.raises(ValueError, match="JUDGE_MODEL"):
         build_judge_complete_fn(_S(None))
-
-
-def test_gate_dispatches_anthropic_for_claude(monkeypatch):
-    calls = []
-    monkeypatch.setattr(
-        guardrail,
-        "_build_claude_faithfulness",
-        lambda s: calls.append("anthropic") or "A",
-    )
-    monkeypatch.setattr(
-        guardrail,
-        "_build_openai_faithfulness",
-        lambda s: calls.append("openai") or "O",
-    )
-    assert build_ragas_faithfulness_detailed(_S("claude-sonnet-4-6")) == "A"
-    assert calls == ["anthropic"]
-
-
-def test_gate_dispatches_openai_for_kimi(monkeypatch):
-    calls = []
-    monkeypatch.setattr(
-        guardrail,
-        "_build_claude_faithfulness",
-        lambda s: calls.append("anthropic") or "A",
-    )
-    monkeypatch.setattr(
-        guardrail,
-        "_build_openai_faithfulness",
-        lambda s: calls.append("openai") or "O",
-    )
-    assert build_ragas_faithfulness_detailed(_S("Kimi-K2.5")) == "O"
-    assert calls == ["openai"]
-
-
-@pytest.mark.asyncio
-async def test_scalar_gate_wraps_the_detailed_path(monkeypatch):
-    """Calibration and the canary use the scalar builder; it must score through
-    the same per-claim path the live gate runs (ADR-0018)."""
-    from ragpipe.canary import ClaimVerdict, ScoredClaims
-
-    async def detailed(*, question, answer, contexts):
-        return ScoredClaims(score=0.25, claims=[ClaimVerdict(claim="c", faithful=False)])
-
-    monkeypatch.setattr(guardrail, "_build_claude_faithfulness", lambda s: detailed)
-    metric_fn = build_ragas_faithfulness(_S("claude-sonnet-4-6"))
-    assert await metric_fn(question="q", answer="a", contexts=[]) == 0.25

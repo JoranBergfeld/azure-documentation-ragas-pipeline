@@ -21,11 +21,9 @@ turns the two judges' scores into a drift verdict:
 - **judge outage** — a judge can't score a canary item at all (missing score).
   Treated as drift: fail-closed, same as the live gate.
 
-Per-claim verdicts (``score_with_claims``) are captured alongside so a drift can be
-read at the level of *which* decomposed claim flipped, not just the scalar
-(uncalibrated scalars hide that). Extraction reproduces RAGAS's own two-call
-faithfulness pass against the pinned ``ragas==0.4.3`` internals — the version pin
-(ADR-0018) is what makes touching those internals safe.
+Per-claim verdicts are captured alongside so a drift can be read at the level of
+*which* decomposed claim flipped, not just the scalar (uncalibrated scalars hide
+that). Both judges score through ``faithfulness_gate``, which owns the extraction.
 """
 from __future__ import annotations
 
@@ -50,68 +48,6 @@ def _finite_score(value: float | None) -> float | None:
         return None
     value = float(value)
     return value if math.isfinite(value) else None
-
-
-@dataclass(frozen=True)
-class ClaimVerdict:
-    """One decomposed claim and whether the judge found it grounded in context."""
-
-    claim: str
-    faithful: bool
-    reason: str = ""
-
-    def to_dict(self) -> dict[str, Any]:
-        return {"claim": self.claim, "faithful": self.faithful, "reason": self.reason}
-
-
-def _coerce_verdict(value: Any) -> bool:
-    """Normalise RAGAS's 0/1 verdict (or a stringy/boolean equivalent) to a bool."""
-    if isinstance(value, bool):
-        return value
-    if isinstance(value, (int, float)):
-        if not math.isfinite(value):
-            raise ValueError(f"cannot interpret faithfulness verdict: {value!r}")
-        return value >= 1
-    if isinstance(value, str):
-        token = value.strip().lower()
-        if token in {"1", "1.0", "true", "yes", "faithful", "supported"}:
-            return True
-        if token in {"0", "0.0", "false", "no", "unfaithful", "unsupported", ""}:
-            return False
-    raise ValueError(f"cannot interpret faithfulness verdict: {value!r}")
-
-
-def _field(obj: Any, *names: str, default: Any = None) -> Any:
-    """Read the first present attribute or mapping key from ``names``."""
-    for name in names:
-        if isinstance(obj, Mapping) and name in obj:
-            return obj[name]
-        if hasattr(obj, name):
-            return getattr(obj, name)
-    return default
-
-
-def parse_claim_verdicts(raw: Iterable[Any]) -> list[ClaimVerdict]:
-    """Normalise RAGAS faithfulness statement-verdicts into ``ClaimVerdict``s.
-
-    Accepts RAGAS ``StatementFaithfulnessAnswer`` objects (attributes
-    ``statement`` / ``verdict`` / ``reason``) or plain dicts with the same keys
-    (also tolerates ``claim`` for the statement text). This is the boundary that
-    keeps per-claim logging independent of RAGAS's internal class names.
-    """
-    out: list[ClaimVerdict] = []
-    for entry in raw:
-        claim = _field(entry, "statement", "claim", default="")
-        verdict = _field(entry, "verdict", "faithful")
-        reason = _field(entry, "reason", default="") or ""
-        out.append(
-            ClaimVerdict(
-                claim=str(claim),
-                faithful=_coerce_verdict(verdict),
-                reason=str(reason),
-            )
-        )
-    return out
 
 
 @dataclass(frozen=True)
@@ -318,43 +254,3 @@ def evaluate_canary(
         drifted=bool(online_mismatch or offline_mismatch or score_disagree or missing),
         reasons=reasons,
     )
-
-
-@dataclass(frozen=True)
-class ScoredClaims:
-    """A faithfulness score plus the per-claim verdicts behind it."""
-
-    score: float
-    claims: list[ClaimVerdict]
-
-
-async def score_with_claims(  # pragma: no cover - live judge
-    metric, sample, *, fallback: bool = True
-) -> ScoredClaims:
-    """Score a sample and capture the decomposed per-claim verdicts.
-
-    Reproduces RAGAS 0.4.3 ``Faithfulness._ascore`` (decompose the answer into
-    statements, NLI each against the context) but keeps the intermediate verdicts
-    instead of discarding them — the same two judge calls, no extra cost. Relies
-    on pinned ``ragas==0.4.3`` internals (``_create_statements`` /
-    ``_create_verdicts`` / ``_compute_score``); the version pin (ADR-0018) is what
-    makes that safe. On any failure it falls back to the public scalar path and
-    returns empty claims rather than breaking the canary. The live gate passes
-    ``fallback=False``: there a judge failure must propagate so the gate fails
-    closed, instead of paying for a second scoring pass on the hot path.
-    """
-    import math
-
-    row = sample.to_dict()
-    try:
-        statements = (await metric._create_statements(row, None)).statements
-        if not statements:
-            return ScoredClaims(score=math.nan, claims=[])
-        verdicts = await metric._create_verdicts(row, statements, None)
-        score = float(metric._compute_score(verdicts))
-        return ScoredClaims(score=score, claims=parse_claim_verdicts(verdicts.statements))
-    except Exception:
-        if not fallback:
-            raise
-        score = float(await metric.single_turn_ascore(sample))
-        return ScoredClaims(score=score, claims=[])

@@ -244,9 +244,9 @@ def build_ragas_evaluator(settings):  # pragma: no cover
         if not records:
             return records
 
-        from ragpipe.guardrail import _ensure_ragas_importable
+        from ragpipe.faithfulness_gate import ensure_ragas_importable
 
-        _ensure_ragas_importable()
+        ensure_ragas_importable()
 
         from datasets import Dataset
         from ragas import evaluate
@@ -317,9 +317,9 @@ def build_per_stage_context_evaluator(settings, stages=None):  # pragma: no cove
     ADR-0016); pass an explicit tuple to override.
     """
     async def evaluator_fn(records: list[EvalRecord]) -> list[EvalRecord]:
-        from ragpipe.guardrail import _ensure_ragas_importable
+        from ragpipe.faithfulness_gate import ensure_ragas_importable
 
-        _ensure_ragas_importable()
+        ensure_ragas_importable()
 
         from datasets import Dataset
         from ragas import evaluate

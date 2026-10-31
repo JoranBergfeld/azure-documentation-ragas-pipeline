@@ -213,7 +213,7 @@ def main() -> None:  # pragma: no cover - UI entry point
     import streamlit as st
 
     from ragpipe.config import Settings
-    from ragpipe.guardrail import prewarm_ragas_imports
+    from ragpipe.faithfulness_gate import prewarm_ragas_imports
 
     # Streamlit reruns corrupt the *first* langchain_openai import (pydantic
     # ValidationError building RunnablePassthrough); build the judge models now,

@@ -4,7 +4,7 @@ import sys
 from dataclasses import dataclass
 from typing import Callable
 
-from ragpipe.guardrail import LoopDecision, as_scored_claims, decide_next
+from ragpipe.guardrail import LoopDecision, decide_next
 from ragpipe.models import Chunk, PipelineState
 from ragpipe.progress import ProgressSink, emit
 from ragpipe.retrieval.substrate import RetrievalResult
@@ -14,6 +14,7 @@ from ragpipe.usage import collect_usage
 RetrieveFn = Callable[..., object]  # (query, pool, *, on_event=None) -> awaitable RetrievalResult
 RerankFn = Callable[[str, list[Chunk], int], list[Chunk]]
 GenerateFn = Callable[[str, list[Chunk], str | None], object]
+# (query, answer, chunks) -> ScoredClaims, the gate's score plus its claim verdicts.
 ScoreFn = Callable[[str, str, list[Chunk]], object]
 
 # Returned verbatim when the guardrail exhausts: the directive abstention
@@ -127,9 +128,7 @@ async def _run(
         )
         claims: list[dict] = []
         try:
-            scored = as_scored_claims(
-                await _maybe_await(deps.score(query, state.answer, state.reranked))
-            )
+            scored = await _maybe_await(deps.score(query, state.answer, state.reranked))
         except Exception as exc:  # judge failure -> fail-closed
             # Logged so operators can tell an outage from a scorer bug; the
             # decision path is identical either way (abstain immediately).
@@ -150,8 +149,8 @@ async def _run(
         else:
             # Per-claim verdicts are diagnostic only (ADR-0018): the decision
             # below still compares the scalar to the threshold.
-            score = scored.score if scored is not None else None
-            claims = [c.to_dict() for c in scored.claims] if scored is not None else []
+            score = scored.score
+            claims = [c.to_dict() for c in scored.claims]
             emit(
                 on_event,
                 "faithfulness",
@@ -163,15 +162,22 @@ async def _run(
                 claims=claims,
             )
         state.faithfulness = score
-        state.add_trace(
-            "faithfulness", {"score": score, "attempt": state.attempt, "claims": claims}
-        )
-
         decision = decide_next(
             score=score,
             threshold=deps.threshold,
             attempt=state.attempt,
             max_retries=deps.max_retries,
+        )
+        # The whole gate result per attempt, so /run can show what the stream shows.
+        state.add_trace(
+            "faithfulness",
+            {
+                "score": score,
+                "attempt": state.attempt,
+                "threshold": deps.threshold,
+                "claims": claims,
+                "decision": decision.name.lower(),
+            },
         )
         emit(
             on_event,

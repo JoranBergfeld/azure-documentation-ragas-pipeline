@@ -85,6 +85,18 @@ documented as such.
    a RAGAS bump removes or reshapes the private methods. The idea is ported from
    the superseded PR #19.
 
+   *Amendment (2026-10-31):* that amendment wasn't true in production. The live
+   wiring built the gate from the scalar builder, which threw the claims away, and
+   a normaliser then turned the bare float into `claims=[]`. Every unit test fed a
+   fake that skipped the stacking, and the real call site was `# pragma: no cover`,
+   so nothing noticed. The fix is structural rather than a one-line swap: one
+   module, `ragpipe.faithfulness_gate`, now owns judge routing, the RAGAS import
+   hazard, `score_with_claims` and the claim types, and the gate has a single
+   output, `ScoredClaims`. There's no scalar builder left to pick by mistake. The
+   live pipeline, the canary (both judges now log claims), calibration and
+   `verify_judges.py` all score through it, and `/run` reports each attempt's gate
+   result next to what the stream already carried.
+
 5. **Document the grounding-vs-correctness caveat** in the README and `.env.example`:
    faithfulness gates grounding in the retrieved context, not factual correctness.
 

@@ -21,14 +21,13 @@ def main() -> int:
             print(f"FAIL {name}: {type(exc).__name__}: {exc}")
 
     def gate():
-        from ragpipe.guardrail import build_ragas_faithfulness
+        from ragpipe.faithfulness_gate import build_faithfulness_gate
 
-        metric_fn = build_ragas_faithfulness(settings)
         return asyncio.run(
-            metric_fn(
-                question="What color is the sky?",
-                answer="The sky is blue.",
-                contexts=["The sky is blue during the day."],
+            build_faithfulness_gate(settings).score(
+                "What color is the sky?",
+                "The sky is blue.",
+                ["The sky is blue during the day."],
             )
         )
 
