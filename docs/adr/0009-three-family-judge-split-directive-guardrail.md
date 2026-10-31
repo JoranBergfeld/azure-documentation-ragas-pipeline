@@ -1,6 +1,6 @@
 # 0009 — Three-family judge split and directive guardrail
 
-**Status:** Accepted (2026-06-11)
+**Status:** Accepted (2026-06-11), amended by ADR-0022: the rule is three model families, not Claude for the gate
 
 ## Context
 

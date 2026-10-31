@@ -16,6 +16,20 @@ DEFAULT_GENERATE_TIMEOUT = 300.0
 DEFAULT_GENERATE_MAX_RETRIES = 1
 
 
+# The generator's instructions. Off Foundry they're handed to a local agent as is;
+# the registered Foundry agent (scripts/setup_agents.py) also gets the Code
+# Interpreter hint, since only the Agent Service has that tool.
+GENERATOR_INSTRUCTIONS = (
+    "You are a Microsoft/Azure documentation assistant. Answer the user's question "
+    "using only the provided context passages. Cite sources by their [n] index. "
+    "If the context is insufficient, say so."
+)
+CODE_INTERPRETER_HINT = (
+    " When the question involves counting, comparing, or aggregating across passages, "
+    "use the code interpreter tool to compute the answer precisely."
+)
+
+
 class _Agent(Protocol):
     async def run(self, prompt: str): ...
 

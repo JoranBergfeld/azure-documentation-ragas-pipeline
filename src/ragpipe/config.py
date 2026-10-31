@@ -1,10 +1,18 @@
 from __future__ import annotations
 
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field, replace
 from enum import Enum
+from typing import Mapping
 
 from dotenv import load_dotenv
+
+from ragpipe.model_roles import (
+    DEFAULT_RERANKER_MODEL,
+    ModelRole,
+    RoleEndpoint,
+    endpoints_from_env,
+)
 
 
 class TestsetMode(str, Enum):
@@ -117,6 +125,25 @@ class Settings:
     agentic_max_iterations: int = 3
     raptor_max_levels: int = 3
     graph_community_levels: int = 1
+    # Roles env moved or renamed explicitly (ADR-0022); every other role stays on the
+    # Foundry account under the deployment names above. Read through endpoint().
+    endpoints: Mapping[ModelRole, RoleEndpoint] = field(default_factory=dict)
+
+    def endpoint(self, role: ModelRole) -> RoleEndpoint:
+        """Where a model role is served and under which model name."""
+        default_model = {
+            ModelRole.GENERATOR: self.foundry_chat_model,
+            ModelRole.PLANNER: self.foundry_chat_model,
+            ModelRole.INGEST_WRITER: self.foundry_chat_model,
+            ModelRole.EMBEDDER: self.foundry_embedding_model,
+            ModelRole.ONLINE_JUDGE: self.judge_model,
+            ModelRole.OFFLINE_JUDGE: self.offline_judge_model,
+            ModelRole.RERANKER: DEFAULT_RERANKER_MODEL,
+        }[role]
+        configured = self.endpoints.get(role)
+        if configured is None:
+            return RoleEndpoint(role=role, model=default_model)
+        return replace(configured, model=configured.model or default_model)
 
     def __post_init__(self) -> None:
         if not (0.0 <= self.faithfulness_threshold <= 1.0):
@@ -158,4 +185,5 @@ class Settings:
             agentic_max_iterations=int(os.environ.get("AGENTIC_MAX_ITERATIONS", "3")),
             raptor_max_levels=int(os.environ.get("RAPTOR_MAX_LEVELS", "3")),
             graph_community_levels=int(os.environ.get("GRAPH_COMMUNITY_LEVELS", "1")),
+            endpoints=endpoints_from_env(os.environ),
         )

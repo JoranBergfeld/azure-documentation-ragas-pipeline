@@ -133,41 +133,45 @@ async def test_canary_scoring_falls_back_to_the_scalar_pass():
     assert scored == ScoredClaims(score=0.9, claims=[])
 
 
-class _S:
-    foundry_project_endpoint = "https://acct.services.ai.azure.com/api/projects/p"
-    foundry_chat_model = "gpt-5.4"
+def _settings(judge_model):
+    from ragpipe.config import Settings
 
-    def __init__(self, judge_model):
-        self.judge_model = judge_model
+    return Settings(
+        foundry_project_endpoint="https://acct.services.ai.azure.com/api/projects/p",
+        foundry_chat_model="gpt-5.4",
+        foundry_embedding_model="text-embedding-3-small",
+        generator_agent_name="gen",
+        judge_model=judge_model,
+    )
 
 
 def test_gate_requires_judge_model():
     with pytest.raises(ValueError, match="JUDGE_MODEL"):
-        build_faithfulness_gate(_S(None))
+        build_faithfulness_gate(_settings(None))
 
 
-@pytest.mark.parametrize(
-    "model,route", [("claude-sonnet-4-6", "anthropic"), ("Kimi-K2.5", "openai")]
-)
-async def test_the_gate_built_from_settings_keeps_the_claims(monkeypatch, model, route):
+async def test_the_gate_built_from_settings_keeps_the_claims(monkeypatch):
     """Regression: the live wiring once went through a float-only builder, so every
-    production trace carried ``claims: []`` (ADR-0018). Whichever route the judge
-    is on, the gate built from settings returns the verdicts."""
-    routes = []
+    production trace carried ``claims: []`` (ADR-0018). The gate built from settings,
+    on whichever host serves the online judge, returns the verdicts."""
+    from ragpipe.model_roles import ModelRole
 
-    def factory(name):
-        def build(settings):
-            routes.append(name)
-            return lambda: _Metric([_verdict("s", 0, "absent")], score=0.0)
+    asked = []
 
-        return build
+    def judge_chat_factory(settings, role):
+        asked.append(role)
+        return lambda: "judge chat"
 
-    monkeypatch.setattr(faithfulness_gate, "_claude_metric_factory", factory("anthropic"))
-    monkeypatch.setattr(faithfulness_gate, "_openai_metric_factory", factory("openai"))
+    monkeypatch.setattr(faithfulness_gate, "judge_chat_factory", judge_chat_factory)
+    monkeypatch.setattr(
+        faithfulness_gate,
+        "_faithfulness_metric",
+        lambda chat: _Metric([_verdict("s", 0, "absent")], score=0.0),
+    )
 
-    scored = await build_faithfulness_gate(_S(model)).score("q", "a", ["c"])
+    scored = await build_faithfulness_gate(_settings("Kimi-K2.5")).score("q", "a", ["c"])
 
-    assert routes == [route]
+    assert asked == [ModelRole.ONLINE_JUDGE]
     assert scored.claims == [ClaimVerdict(claim="s", faithful=False, reason="absent")]
 
 

@@ -165,9 +165,17 @@ Usage only, never prices.
 ## Where things run
 
 **Model role**:
-A job a model does here: generator, planner, situating-context writer, embedder, online judge,
-offline judge, or reranker. Each role is served by exactly one inference host at a time.
+A job a model does here: generator, planner, ingest writer, embedder, online judge, offline
+judge, or reranker. Each role is served by exactly one inference host at a time.
 _Avoid_: deployment (that's the host's name for a model), client
+
+**Ingest writer**:
+The model role that writes what ingest needs written: situating context, RAPTOR summaries,
+graph entities and community reports.
+_Avoid_: context model, decorator
+
+**Planner**:
+The model role that splits a question into search sub-queries for an agentic mode.
 
 **Inference host**:
 Where a model role is served: the Foundry account or the DGX Spark.

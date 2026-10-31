@@ -1,6 +1,7 @@
-"""One-shot LIVE smoke for every model route (run on a machine with Azure access
-BEFORE any ingest or eval run). Verifies: online judge gate scoring, DeepSeek
-offline judge, gpt decoration call, raw judge completion. Exits non-zero on failure."""
+"""One-shot LIVE smoke for every text model role, wherever each one is served (run
+BEFORE any ingest or eval run). Verifies: online judge gate scoring, the offline
+judge, the ingest writer, the planner, a raw online judge completion. Exits non-zero
+on failure."""
 import asyncio
 import sys
 
@@ -37,20 +38,18 @@ def main() -> int:
         llm, _ = _build_ragas_clients(settings)
         return llm.langchain_llm.invoke("Reply with exactly: OK").content
 
-    def decoration():
-        from ragpipe.context_gen import build_context_complete_fn
+    def completion(role):
+        from ragpipe.model_roles import complete_fn
 
-        return build_context_complete_fn(settings)("Reply with exactly: OK")
+        return lambda: complete_fn(settings, role)("Reply with exactly: OK")
 
-    def judge_raw():
-        from ragpipe.foundry_judge import build_judge_complete_fn
-
-        return build_judge_complete_fn(settings)("Reply with exactly: OK")
+    from ragpipe.model_roles import ModelRole
 
     check("online judge gate (RAGAS faithfulness)", gate)
-    check("deepseek offline judge", offline_judge)
-    check("gpt decoration completion", decoration)
-    check("judge raw completion", judge_raw)
+    check("offline judge", offline_judge)
+    check("ingest writer completion", completion(ModelRole.INGEST_WRITER))
+    check("planner completion", completion(ModelRole.PLANNER))
+    check("online judge raw completion", completion(ModelRole.ONLINE_JUDGE))
     return 1 if failures else 0
 
 

@@ -2,10 +2,12 @@
 
 Observable hybrid-retrieval RAG over Microsoft/Azure docs, evaluated with RAGAS.
 Generation, embeddings and the judges still run on Azure AI Foundry (Microsoft Agent
-Framework). Retrieval and rerank don't anymore: pgvector in homelab's Postgres
-(ADR-0021) and a cross-encoder on a DGX Spark (#40). So it's half Azure now, which is
-why the repo dropped its old `azure-documentation-ragas-pipeline` name for
-`ragas-infused-pipeline`.
+Framework) by default. Retrieval and rerank don't anymore: pgvector in homelab's Postgres
+(ADR-0021) and a cross-encoder on a DGX Spark (#40). Every model role can move to an
+OpenAI-compatible server with one env var (`<ROLE>_URL`, ADR-0022), and the plan is to move
+as much as is feasible onto the Spark, one role and one eval rerun at a time. So it's half
+Azure now and heading lower, which is why the repo dropped its old
+`azure-documentation-ragas-pipeline` name for `ragas-infused-pipeline`.
 
 ![RAGAS-infused RAG pipeline — architecture](docs/pipeline.svg)
 
@@ -218,6 +220,8 @@ own rate for that `deployment`.
 - Calls that cost nothing are left out: a cached query embedding, the score-sort reranker used
   by `graphrag`, `combined` and the agentic modes, and the Spark's cross-encoder (homelab
   hardware, nobody bills it). A run with no paid call reports `[]`.
+- A model role moved to the Spark (ADR-0022) still reports its tokens, under the served model
+  name. It's free, so the site prices those rows at zero; the counts are still worth having.
 - A run that fails returns no payload, so its usage is not reported.
 
 Requires the same Azure env vars as the pipeline plus `RAG_DATABASE_URL`, and `RERANKER_URL` /

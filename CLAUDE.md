@@ -1,9 +1,10 @@
 # ragas-infused-pipeline (`ragpipe`)
 
 Observable hybrid-retrieval RAG over Microsoft/Azure docs, evaluated with RAGAS.
-Generation, embeddings and judges run on Microsoft Agent Framework + Azure AI Foundry;
-retrieval is pgvector in homelab's Postgres (ADR-0021) and the rerank modes call a
-cross-encoder on vLLM on the DGX Spark (`retrieval/cross_encoder.py`, issue #40). The `ragpipe`
+Every model call fills a model role (generator, planner, ingest writer, embedder, online
+judge, offline judge, reranker) served by Azure AI Foundry or by an OpenAI-compatible URL
+like vLLM on the DGX Spark (`model_roles.py`, ADR-0022); the plan is to move roles to the
+Spark one at a time. Retrieval is pgvector in homelab's Postgres (ADR-0021). The `ragpipe`
 package (`src/ragpipe/`) holds the pipeline; `app/` is the Streamlit UI + FastAPI
 service. Read `README.md` for setup/run/eval commands and `docs/adr/` for the *why*
 behind every significant design decision.
@@ -54,7 +55,8 @@ Do not reintroduce fixed `dense`/`bm25` stage fields.
 **Three-family judge split (ADR-0009/0011).** The generator (gpt), the online faithfulness
 gate (Claude/Anthropic, `JUDGE_MODEL`), and the offline RAGAS judge (DeepSeek,
 `OFFLINE_JUDGE_MODEL`) are deliberately different model families to avoid self-preference
-bias. `foundry_judge.judge_provider()` routes Anthropic vs. the OpenAI-compatible Foundry
+bias. The rule is three model *families* by base-model lineage, not vendors (ADR-0022).
+On Foundry, `model_roles.judge_provider()` routes Anthropic vs. the OpenAI-compatible
 route. `JUDGE_MODEL` is required: builders raise rather than silently fall back to the generator.
 
 **Two app surfaces.** `app/dashboard.py` (Streamlit: Run / Evaluation / Architecture tabs)
@@ -75,9 +77,12 @@ required** everywhere: an omitted/unknown mode returns HTTP 422; there is no ser
   (`main()`, `build_pipeline_fn`, the live judge builders) is marked `# pragma: no cover`.
 - **RAGAS/langchain import hazard:** import `langchain_openai` *before* `ragas`;
   `faithfulness_gate.ensure_ragas_importable()` does this and installs a `vertexai` placeholder.
-  For judges on the OpenAI-compatible Foundry route, build `AzureChatOpenAI(model=<deployment>)`
-  (a null model 400s on the sglang-backed deployments). Every live LLM/judge client is built
-  with explicit `timeout` + `max_retries` (shared `JUDGE_TIMEOUT`/`JUDGE_MAX_RETRIES`).
+- **Model clients come from `model_roles`, never built inline.** Ask for a role
+  (`openai_client`, `complete_fn`, `judge_chat_factory`, `langchain_embeddings`,
+  `generator_agent`); it picks the host, credential, Foundry route, API version and the
+  role's `timeout` + `max_retries` budget, and records usage for metered roles. A new kind
+  of model call is a new role or a new function there, tested in `tests/test_model_roles.py`
+  with SDK recorders. `<ROLE>_URL` moves a role to an OpenAI-compatible host (ADR-0022).
 - **Usage reporting (ADR-0020):** every metered call records a `UsageEntry` through
   `ragpipe.usage.record_*` at the point the provider response is in hand; `run_pipeline`
   collects them into `PipelineState.usage`. A new paid call needs its own `record_*` line.

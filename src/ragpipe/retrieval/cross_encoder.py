@@ -24,9 +24,14 @@ from dataclasses import dataclass, replace
 import httpx
 
 from ragpipe.config import RERANKER_OFFLINE, ModeUnavailable, RetrievalMode
+from ragpipe.model_roles import (
+    DEFAULT_RERANKER_MODEL,
+    ModelRole,
+    RoleEndpoint,
+    endpoints_from_env,
+)
 from ragpipe.models import Chunk
 
-DEFAULT_RERANKER_MODEL = "nvidia/llama-nemotron-rerank-1b-v2"
 # How long a /health answer stands before the next probe.
 HEALTH_TTL_SECONDS = 60.0
 # The probe runs inside /modes, so it gives up fast.
@@ -40,16 +45,22 @@ class RerankerConfig:
     model: str = DEFAULT_RERANKER_MODEL
 
     @classmethod
-    def from_env(cls) -> "RerankerConfig | None":
-        """The env homelab passes the container. None when ``RERANKER_URL`` is unset."""
-        url = os.environ.get("RERANKER_URL")
-        if not url:
+    def from_endpoint(cls, endpoint: RoleEndpoint) -> "RerankerConfig | None":
+        """The reranker role's endpoint. None when no URL serves it: Foundry has no
+        cross-encoder, so there's nothing to fall back to."""
+        if not endpoint.url:
             return None
         return cls(
-            url=url.rstrip("/"),
-            api_key=os.environ.get("RERANKER_API_KEY") or None,
-            model=os.environ.get("RERANKER_MODEL") or DEFAULT_RERANKER_MODEL,
+            url=endpoint.url,
+            api_key=endpoint.api_key,
+            model=endpoint.model or DEFAULT_RERANKER_MODEL,
         )
+
+    @classmethod
+    def from_env(cls) -> "RerankerConfig | None":
+        """The same, read straight from the env homelab passes the container."""
+        endpoint = endpoints_from_env(os.environ).get(ModelRole.RERANKER)
+        return cls.from_endpoint(endpoint) if endpoint else None
 
     def headers(self) -> dict[str, str]:
         return {"Authorization": f"Bearer {self.api_key}"} if self.api_key else {}
